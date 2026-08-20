@@ -125,6 +125,9 @@ export function buildTwosComplementSubtractor(bits: number): Circuit {
     nodes[k] = { ...adder.nodes[k] };
   });
 
+  // Modify CIN to be CONSTANT 1
+  nodes['CIN'] = { id: 'CIN', type: 'CONSTANT', label: 'Cin', inputs: [], value: 1, x: 0, y: -100 };
+
   // Modify B inputs to be NOT gates driven by actual B inputs
   for (let i = 0; i < bits; i++) {
     const origB = `B${i}`;
@@ -222,16 +225,16 @@ export function buildMultiplier(bitsA: number, bitsB: number): Circuit {
       const ha2 = createHA('HA2', pp[1][2], fa1.carry, 300, 300); // ha2 sum goes to next stage, carry goes to next stage
       
       // Stage 2 adders (+ pp[2][...])
-      const ha3 = createHA('HA3', ha1.sum, pp[2][0], 500, 150); // P1
-      const fa2 = createFA('FA2', fa1.sum, pp[2][1], ha3.carry, 500, 250); // P2
-      const fa3 = createFA('FA3', ha2.sum, pp[2][2], fa2.carry, 500, 350); // P3
-      const ha4 = createHA('HA4', ha2.carry, fa3.carry, 500, 450); // P4, P5
+      const ha3 = createHA('HA3', fa1.sum, pp[2][0], 500, 150); // ha3.sum is P2, carry to next
+      const fa2 = createFA('FA2', ha2.sum, pp[2][1], ha3.carry, 500, 250); // fa2.sum is P3, carry to next
+      const fa3 = createFA('FA3', ha2.carry, pp[2][2], fa2.carry, 500, 350); // fa3.sum is P4, carry is P5
       
       nodes['P1'] = { id: 'P1', type: 'OUTPUT', label: 'P1', inputs: [ha1.sum], x: 800, y: 100 };
       nodes['P2'] = { id: 'P2', type: 'OUTPUT', label: 'P2', inputs: [ha3.sum], x: 800, y: 200 };
       nodes['P3'] = { id: 'P3', type: 'OUTPUT', label: 'P3', inputs: [fa2.sum], x: 800, y: 300 };
       nodes['P4'] = { id: 'P4', type: 'OUTPUT', label: 'P4', inputs: [fa3.sum], x: 800, y: 400 };
-      nodes['P5'] = { id: 'P5', type: 'OUTPUT', label: 'P5', inputs: [ha4.sum], x: 800, y: 500 }; // Wait, actually it's a bit more complex. 
+      nodes['P5'] = { id: 'P5', type: 'OUTPUT', label: 'P5', inputs: [fa3.carry], x: 800, y: 500 }; 
+      
       // Multiplier outputs are P0 to P5 for 3x3.
       outputNodes.push('P1', 'P2', 'P3', 'P4', 'P5');
       

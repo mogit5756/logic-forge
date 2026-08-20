@@ -26,9 +26,15 @@ export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
     inputMap[v] = id;
   }
   
-  // Deduplicate similar expressions to avoid repeating trees?
-  // For a simple visualizer, it's better to show the full tree explicitly.
+  // Use a Map to cache visited AST node object references. 
+  // This turns the AST into a DAG and completely eliminates duplicate subexpressions/inverters.
+  const visited = new Map<ASTNode, string>();
+  
   function traverse(node: ASTNode): string {
+    if (visited.has(node)) {
+      return visited.get(node)!;
+    }
+    
     if (node.type === 'VAR') {
       if (inputMap[node.value!]) {
         return inputMap[node.value!];
@@ -41,9 +47,19 @@ export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
       }
     }
     
-    const id = generateId(node.type);
-    const gateInputs: string[] = [];
+    if (node.type === 'CONSTANT') {
+      const id = generateId(`CONST_${node.value}`);
+      nodes[id] = { id, type: 'CONSTANT', label: node.value?.toString(), value: node.value as 0 | 1, inputs: [] };
+      visited.set(node, id);
+      return id;
+    }
     
+    const id = generateId(node.type);
+    
+    // We must set it in visited BEFORE traversing children in case of loops (though ASTs are trees here)
+    visited.set(node, id);
+    
+    const gateInputs: string[] = [];
     if (node.left) gateInputs.push(traverse(node.left));
     if (node.right) gateInputs.push(traverse(node.right));
     
