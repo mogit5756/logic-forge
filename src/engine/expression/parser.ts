@@ -5,11 +5,11 @@ export interface Token {
   value: string;
 }
 
-export type ASTNodeType = 'VAR' | 'NOT' | 'AND' | 'OR' | 'XOR' | 'XNOR' | 'NAND' | 'NOR';
+export type ASTNodeType = 'VAR' | 'NOT' | 'AND' | 'OR' | 'XOR' | 'XNOR' | 'NAND' | 'NOR' | 'CONSTANT';
 
 export interface ASTNode {
   type: ASTNodeType;
-  value?: string;
+  value?: string | number;
   left?: ASTNode;
   right?: ASTNode;
 }

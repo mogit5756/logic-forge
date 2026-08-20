@@ -5,8 +5,8 @@ let idCounter = 0;
 const generateId = (prefix: string) => `${prefix}_${idCounter++}`;
 
 export function getVariablesFromAST(node: ASTNode, vars: Set<string> = new Set()): Set<string> {
-  if (node.type === 'VAR') {
-    vars.add(node.value!);
+  if (node.type === 'VAR' && node.value !== undefined) {
+    vars.add(String(node.value));
   }
   if (node.left) getVariablesFromAST(node.left, vars);
   if (node.right) getVariablesFromAST(node.right, vars);
@@ -36,20 +36,22 @@ export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
     }
     
     if (node.type === 'VAR') {
-      if (inputMap[node.value!]) {
-        return inputMap[node.value!];
+      const varName = String(node.value);
+      if (inputMap[varName]) {
+        return inputMap[varName];
       } else {
-        const id = generateId(`IN_${node.value}`);
-        nodes[id] = { id, type: 'INPUT', label: node.value, inputs: [] };
+        const id = generateId(`IN_${varName}`);
+        nodes[id] = { id, type: 'INPUT', label: varName, inputs: [] };
         inputNodes.push(id);
-        inputMap[node.value!] = id;
+        inputMap[varName] = id;
         return id;
       }
     }
     
     if (node.type === 'CONSTANT') {
       const id = generateId(`CONST_${node.value}`);
-      nodes[id] = { id, type: 'CONSTANT', label: node.value?.toString(), value: node.value as 0 | 1, inputs: [] };
+      const val: 0 | 1 = node.value === 1 || node.value === '1' ? 1 : 0;
+      nodes[id] = { id, type: 'CONSTANT', label: node.value?.toString(), value: val, inputs: [] };
       visited.set(node, id);
       return id;
     }
