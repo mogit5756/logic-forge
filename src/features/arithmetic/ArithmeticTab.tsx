@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   HalfAdderCircuit, FullAdderCircuit, 
   HalfSubtractorCircuit, FullSubtractorCircuit,
@@ -12,15 +12,15 @@ import type { Circuit } from '../../engine/types';
 
 type LabId = 'half-adder' | 'full-adder' | 'ripple-adder' | 'half-sub' | 'full-sub' | 'twos-sub' | 'mult-2x2' | 'mult-3x3';
 
-const LABS: { id: LabId; name: string; hasWidth: boolean; defaultWidth?: number }[] = [
-  { id: 'half-adder', name: 'Half Adder', hasWidth: false },
-  { id: 'full-adder', name: 'Full Adder', hasWidth: false },
-  { id: 'ripple-adder', name: 'N-bit Ripple-Carry Adder', hasWidth: true, defaultWidth: 4 },
-  { id: 'half-sub', name: 'Half Subtractor', hasWidth: false },
-  { id: 'full-sub', name: 'Full Subtractor', hasWidth: false },
-  { id: 'twos-sub', name: 'N-bit 2\'s Complement Subtractor', hasWidth: true, defaultWidth: 4 },
-  { id: 'mult-2x2', name: '2x2 Binary Multiplier', hasWidth: false },
-  { id: 'mult-3x3', name: '3x3 Binary Multiplier', hasWidth: false },
+const LABS: { id: LabId; name: string; category: string; hasWidth: boolean; defaultWidth?: number }[] = [
+  { id: 'half-adder', name: 'Half Adder', category: 'Adders', hasWidth: false },
+  { id: 'full-adder', name: 'Full Adder', category: 'Adders', hasWidth: false },
+  { id: 'ripple-adder', name: 'N-bit Ripple-Carry Adder', category: 'Adders', hasWidth: true, defaultWidth: 4 },
+  { id: 'half-sub', name: 'Half Subtractor', category: 'Subtractors', hasWidth: false },
+  { id: 'full-sub', name: 'Full Subtractor', category: 'Subtractors', hasWidth: false },
+  { id: 'twos-sub', name: "N-bit 2's Complement Subtractor", category: 'Subtractors', hasWidth: true, defaultWidth: 4 },
+  { id: 'mult-2x2', name: '2x2 Binary Multiplier', category: 'Multipliers', hasWidth: false },
+  { id: 'mult-3x3', name: '3x3 Binary Multiplier', category: 'Multipliers', hasWidth: false },
 ];
 
 export const ArithmeticTab: React.FC = () => {
@@ -29,6 +29,7 @@ export const ArithmeticTab: React.FC = () => {
   const [inputA, setInputA] = useState(0);
   const [inputB, setInputB] = useState(0);
   const [carryIn, setCarryIn] = useState(0);
+  const [showNoBorrowMode, setShowNoBorrowMode] = useState(false);
 
   const [circuit, setCircuit] = useState<Circuit>(HalfAdderCircuit);
   const [finalNodeValues, setFinalNodeValues] = useState<Record<string, 0 | 1>>({});
@@ -109,7 +110,7 @@ export const ArithmeticTab: React.FC = () => {
       let maxDepth = 0;
       Object.keys(circuit.nodes).forEach(nid => {
          const node = circuit.nodes[nid];
-         depthMap[nid] = node.type === 'INPUT' ? 0 : -1;
+         depthMap[nid] = (node.type === 'INPUT' || node.type === 'CONSTANT') ? 0 : -1;
       });
       
       // Calculate depth
@@ -167,17 +168,74 @@ export const ArithmeticTab: React.FC = () => {
     if (activeLab.hasWidth) {
       let sum = 0;
       for (let i = 0; i < bitWidth; i++) if (finalNodeValues[`SUM${i}`]) sum += (1 << i);
-      resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Sum = {sum} (Cout = {finalNodeValues['COUT'] ?? 0})</p>;
+      const cout = finalNodeValues['COUT'] ?? 0;
+      resultUI = (
+        <div className="space-y-1">
+          <p className="text-xl font-mono text-indigo-600 font-bold leading-tight">
+            Sum = {sum} <span className="text-xs font-normal text-slate-500 font-sans">(Cout = {cout})</span>
+          </p>
+          <p className="text-xs font-mono text-slate-600">
+            Binary: {cout}{Array.from({ length: bitWidth }, (_, i) => finalNodeValues[`SUM${bitWidth - 1 - i}`] || 0).join('')}₂
+          </p>
+        </div>
+      );
     } else {
-      resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Sum = {finalNodeValues['SUM'] ?? 0}, Carry = {finalNodeValues['CARRY'] ?? finalNodeValues['COUT'] ?? 0}</p>;
+      const sum = finalNodeValues['SUM'] ?? 0;
+      const cout = finalNodeValues['CARRY'] ?? finalNodeValues['COUT'] ?? 0;
+      resultUI = (
+        <p className="text-xl font-mono text-indigo-600 font-bold leading-tight">
+          Sum = {sum}, Carry = {cout}
+        </p>
+      );
     }
   } else if (activeLab.id.includes('sub')) {
-    if (activeLab.hasWidth) {
+    if (activeLab.id === 'twos-sub') {
        let diff = 0;
        for (let i = 0; i < bitWidth; i++) if (finalNodeValues[`SUM${i}`]) diff += (1 << i);
-       resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Diff = {diff} (COUT / NoBorrow = {finalNodeValues['COUT'] ?? 0})</p>;
+       const cout = finalNodeValues['COUT'] ?? 0;
+       const isPositive = cout === 1;
+       const actualDiff = inputA - inputB;
+       
+       resultUI = (
+         <div className="space-y-2">
+           <div className="flex items-baseline gap-2">
+             <span className="text-xl font-mono text-indigo-600 font-bold">
+               A - B = {actualDiff}
+             </span>
+             <span className="text-xs font-mono text-slate-500">
+               ({diff} in unsigned {bitWidth}-bit)
+             </span>
+           </div>
+           
+           <div className="text-xs font-mono p-2 rounded-lg bg-white/80 border border-indigo-100 space-y-1">
+             <div>
+               Diff Bits [S{bitWidth-1}..S0] = <strong>{Array.from({ length: bitWidth }, (_, i) => finalNodeValues[`SUM${bitWidth - 1 - i}`] || 0).join('')}₂</strong>
+             </div>
+             {showNoBorrowMode ? (
+               <div className="flex items-center gap-1.5 pt-0.5">
+                 <span>No-Borrow Flag:</span>
+                 <span className={`font-bold px-1.5 py-0.5 rounded text-[11px] ${isPositive ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                   {cout} ({isPositive ? 'No Borrow (A ≥ B)' : 'Borrow Required (A < B)'})
+                 </span>
+               </div>
+             ) : (
+               <div className="flex items-center gap-1.5 pt-0.5">
+                 <span>End Carry (Cout):</span>
+                 <span className="font-bold text-indigo-700">{cout}</span>
+                 <span className="text-slate-500 text-[10px]">({isPositive ? 'Result is ≥ 0' : 'Result is < 0 in 2s-comp'})</span>
+               </div>
+             )}
+           </div>
+         </div>
+       );
     } else {
-       resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Diff = {finalNodeValues['DIFF'] ?? 0}, Bout = {finalNodeValues['BOUT'] ?? 0}</p>;
+       const diff = finalNodeValues['DIFF'] ?? 0;
+       const bout = finalNodeValues['BOUT'] ?? 0;
+       resultUI = (
+         <p className="text-xl font-mono text-indigo-600 font-bold leading-tight">
+           Diff = {diff}, Bout = {bout}
+         </p>
+       );
     }
   } else if (activeLab.id.includes('mult')) {
       let prod = 0;
@@ -189,11 +247,10 @@ export const ArithmeticTab: React.FC = () => {
         binStr += bit;
       }
       resultUI = (
-        <div className="flex flex-col gap-1">
-          <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Product = {prod}</p>
-          <p className="text-xs font-mono text-primary-800">
-            Bits: {Array.from({length: bts}, (_, i) => `P${bts - 1 - i}`).join(' ')}<br/>
-            Value: {binStr.split('').join('  ')}₂ = {prod}
+        <div className="space-y-1">
+          <p className="text-xl font-mono text-indigo-600 font-bold leading-tight">Product = {prod}</p>
+          <p className="text-xs font-mono text-slate-600">
+            Binary: {binStr}₂ ({bts}-bit output)
           </p>
         </div>
       );
@@ -209,151 +266,236 @@ export const ArithmeticTab: React.FC = () => {
   const currentNodeValues = timeline[currentStep] || {};
 
   return (
-    <div className="flex flex-col gap-8 p-6 max-w-7xl mx-auto">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-surface-100">
-        <h2 className="text-2xl font-bold mb-6">Arithmetic Circuits Lab</h2>
+    <div className="flex flex-col gap-6 max-w-7xl mx-auto">
+      {/* Circuit Selector Pills */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/80">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+            Select Arithmetic Circuit
+          </h2>
+          <span className="text-xs text-slate-500 font-medium">
+            Standard Gate Topologies with Stepwise Signal Animation
+          </span>
+        </div>
         
-        <div className="flex flex-wrap gap-3 mb-8 border-b pb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
           {LABS.map(lab => (
             <button
               key={lab.id}
               onClick={() => setActiveLab(lab as any)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeLab.id === lab.id ? 'bg-primary-600 text-white shadow' : 'bg-surface-100 hover:bg-surface-200'}`}
+              className={`p-2.5 rounded-xl text-xs font-semibold tracking-tight transition-all text-center flex flex-col items-center justify-center gap-1 border ${
+                activeLab.id === lab.id 
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' 
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/70 hover:border-slate-300'
+              }`}
             >
-              {lab.name}
+              <span className="text-[10px] uppercase font-bold tracking-wider opacity-75">{lab.category}</span>
+              <span className="leading-tight">{lab.name.replace('N-bit ', '').replace(' Binary', '')}</span>
             </button>
           ))}
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Controls column */}
-          <div className="lg:col-span-1 flex flex-col gap-6">
-            {activeLab.hasWidth && (
-              <div className="bg-surface-50 p-4 rounded-lg border">
-                <label className="block text-sm font-bold mb-2">Bit Width (N)</label>
-                <input 
-                  type="range" min="2" max="8" step="1"
-                  value={bitWidth} onChange={e => setBitWidth(parseInt(e.target.value))}
-                  className="w-full cursor-pointer accent-primary-600"
-                />
-                <div className="text-center font-bold text-primary-600 mt-1">{bitWidth}-bit</div>
+      {/* Main Workspace: Controls + Live Circuit */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Input Controls & Results (4 cols) */}
+        <div className="lg:col-span-4 flex flex-col gap-5">
+          {activeLab.hasWidth && (
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Bit Width (N)</label>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-xs font-bold border border-indigo-200/60">
+                  {bitWidth} Bits
+                </span>
               </div>
-            )}
-          
-            <div className="bg-surface-50 p-5 rounded-lg border">
-              <h3 className="text-base font-bold mb-4 text-surface-900">Input Controls</h3>
-              <div className="flex flex-col gap-4">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm font-medium text-surface-700">Operand A (0 - {maxValA})</label>
-                    <span className="font-mono text-xs text-surface-500 font-semibold">
-                      {inputA.toString(2).padStart(getBitsA(), '0')}₂
-                    </span>
-                  </div>
-                  <input 
-                    type="number" min="0" max={maxValA}
-                    value={inputA} onChange={e => setInputA(Math.min(maxValA, Math.max(0, parseInt(e.target.value) || 0)))}
-                    className="border border-surface-300 p-2 rounded w-full bg-white font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-sm font-medium text-surface-700">Operand B (0 - {maxValB})</label>
-                    <span className="font-mono text-xs text-surface-500 font-semibold">
-                      {inputB.toString(2).padStart(getBitsB(), '0')}₂
-                    </span>
-                  </div>
-                  <input 
-                    type="number" min="0" max={maxValB}
-                    value={inputB} onChange={e => setInputB(Math.min(maxValB, Math.max(0, parseInt(e.target.value) || 0)))}
-                    className="border border-surface-300 p-2 rounded w-full bg-white font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                  />
-                </div>
-                {hasCarryIn && (
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-surface-700">
-                      {activeLab.id === 'full-sub' ? 'Borrow In (Bin)' : 'Carry In (Cin)'} (0 or 1)
-                    </label>
-                    <select 
-                      value={carryIn} onChange={e => setCarryIn(parseInt(e.target.value) || 0)}
-                      className="border border-surface-300 p-2 rounded w-full bg-white font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                    >
-                      <option value={0}>0 (Low)</option>
-                      <option value={1}>1 (High)</option>
-                    </select>
-                  </div>
-                )}
+              <input 
+                type="range" min="2" max="8" step="1"
+                value={bitWidth} onChange={e => setBitWidth(parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-indigo-600 h-2 bg-slate-200 rounded-lg"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+                <span>2 bits</span>
+                <span>8 bits</span>
               </div>
             </div>
-
-            <div className="p-5 bg-primary-50/70 rounded-lg border border-primary-200">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-primary-900 mb-2">Simulated Output</h3>
-              {resultUI}
-            </div>
-          </div>
-          
-          {/* Circuit Canvas & Simulation Playback */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <div className="bg-surface-100 p-3 rounded-lg border flex flex-col gap-3">
-              <div className="flex justify-between items-center flex-wrap gap-2">
-                 <div className="flex gap-2">
-                   <button onClick={() => { setIsPlaying(false); setCurrentStep(0); }} className="px-3 py-1 bg-surface-200 hover:bg-surface-300 rounded text-xs font-bold transition-colors">⏮ Reset</button>
-                   <button onClick={() => { setIsPlaying(false); setCurrentStep(Math.max(0, currentStep - 1)); }} className="px-3 py-1 bg-surface-200 hover:bg-surface-300 rounded text-xs font-bold transition-colors">⏪ Step Back</button>
-                   <button onClick={handlePlayPause} className="px-5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded text-xs font-bold shadow transition-colors">{isPlaying ? '⏸ Pause' : '▶ Play Step'}</button>
-                   <button onClick={() => { setIsPlaying(false); setCurrentStep(Math.min(timeline.length - 1, currentStep + 1)); }} className="px-3 py-1 bg-surface-200 hover:bg-surface-300 rounded text-xs font-bold transition-colors">Step Fwd ⏩</button>
-                 </div>
-                 <div className="flex items-center gap-2 text-xs bg-white px-2.5 py-1 rounded border shadow-sm">
-                   <span className="font-semibold text-surface-600">Speed:</span>
-                   {(['Slow', 'Normal', 'Fast'] as const).map(s => {
-                     const val = s === 'Slow' ? 1000 : s === 'Normal' ? 500 : 200;
-                     return (
-                       <button 
-                         key={s} 
-                         onClick={() => setPlaybackSpeed(val)}
-                         className={`px-2 py-0.5 rounded transition-colors ${playbackSpeed === val ? 'bg-primary-100 text-primary-700 font-bold' : 'hover:bg-surface-100 text-surface-600'}`}
-                       >
-                         {s}
-                       </button>
-                     );
-                   })}
-                 </div>
-              </div>
-              <div className="w-full bg-surface-200 h-2 rounded-full overflow-hidden">
-                 <div 
-                   className="bg-primary-500 h-full transition-all duration-300"
-                   style={{ width: `${(currentStep / Math.max(1, timeline.length - 1)) * 100}%` }}
-                 />
-              </div>
-              <div className="text-center text-xs font-mono text-surface-500">
-                Logic Propagation Depth: Step {currentStep + 1} of {timeline.length}
-              </div>
-            </div>
-            
-            <div className="border border-surface-200 rounded-lg overflow-hidden bg-white shadow-sm h-[480px]">
-              <CircuitCanvas circuit={circuit} height={480} nodeValues={currentNodeValues} />
-            </div>
-          </div>
-        </div>
-
-        {/* Detailed Educational & Bitwise Walkthrough Section */}
-        <div className="mt-10 pt-8 border-t border-surface-200">
-          <div className="bg-surface-50 p-6 md:p-8 rounded-xl border border-surface-200 shadow-sm">
-            <h3 className="font-bold text-xl text-surface-900 mb-6 flex items-center gap-2">
-              <span>📖</span>
-              <span>How It Works & Bitwise Walkthrough: {activeLab.name}</span>
+          )}
+        
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+              <span>Operands</span>
+              <span className="text-[10px] font-normal text-slate-400 lowercase">decimal & binary</span>
             </h3>
-            <ArithmeticExplanation
-              labId={activeLab.id}
-              bitWidth={bitWidth}
-              inputA={inputA}
-              inputB={inputB}
-              carryIn={carryIn}
-              finalNodeValues={finalNodeValues}
-            />
+            
+            <div className="space-y-3.5">
+              <div>
+                <div className="flex justify-between items-center mb-1 text-xs">
+                  <label className="font-semibold text-slate-700">Operand A (0 - {maxValA})</label>
+                  <span className="font-mono text-xs text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">
+                    {inputA.toString(2).padStart(getBitsA(), '0')}₂
+                  </span>
+                </div>
+                <input 
+                  type="number" min="0" max={maxValA}
+                  value={inputA} onChange={e => setInputA(Math.min(maxValA, Math.max(0, parseInt(e.target.value) || 0)))}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full bg-slate-50/50 font-mono text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1 text-xs">
+                  <label className="font-semibold text-slate-700">Operand B (0 - {maxValB})</label>
+                  <span className="font-mono text-xs text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">
+                    {inputB.toString(2).padStart(getBitsB(), '0')}₂
+                  </span>
+                </div>
+                <input 
+                  type="number" min="0" max={maxValB}
+                  value={inputB} onChange={e => setInputB(Math.min(maxValB, Math.max(0, parseInt(e.target.value) || 0)))}
+                  className="border border-slate-300 p-2.5 rounded-xl w-full bg-slate-50/50 font-mono text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                />
+              </div>
+
+              {hasCarryIn && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-slate-700">
+                    {activeLab.id === 'full-sub' ? 'Borrow In (Bin)' : 'Carry In (Cin)'} (0 or 1)
+                  </label>
+                  <select 
+                    value={carryIn} onChange={e => setCarryIn(parseInt(e.target.value) || 0)}
+                    className="border border-slate-300 p-2.5 rounded-xl w-full bg-slate-50/50 font-mono text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                  >
+                    <option value={0}>0 (Logic Low)</option>
+                    <option value={1}>1 (Logic High)</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Cout / No-Borrow toggle for 2's complement subtractor */}
+              {activeLab.id === 'twos-sub' && (
+                <div className="pt-2 border-t border-slate-200/80">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-700">End Carry Display:</span>
+                    <button
+                      onClick={() => setShowNoBorrowMode(!showNoBorrowMode)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors flex items-center gap-1.5"
+                    >
+                      <span>🔄</span>
+                      <span>{showNoBorrowMode ? 'No-Borrow Mode' : 'Raw Cout Mode'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Simulated Output Card */}
+          <div className="p-5 bg-gradient-to-br from-indigo-50/90 to-slate-50 rounded-2xl border border-indigo-200/80 shadow-sm">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-900 mb-2 flex items-center gap-1.5">
+              <span>⚡</span>
+              <span>Simulated Output</span>
+            </h3>
+            {resultUI}
           </div>
         </div>
+        
+        {/* Right Column: Circuit Canvas & Simulation Playback (8 cols) */}
+        <div className="lg:col-span-8 flex flex-col gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+            <div className="flex justify-between items-center flex-wrap gap-2">
+               <div className="flex gap-1.5">
+                 <button 
+                   onClick={() => { setIsPlaying(false); setCurrentStep(0); }} 
+                   className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                 >
+                   ⏮ Reset
+                 </button>
+                 <button 
+                   onClick={() => { setIsPlaying(false); setCurrentStep(Math.max(0, currentStep - 1)); }} 
+                   className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                 >
+                   ⏪ Step
+                 </button>
+                 <button 
+                   onClick={handlePlayPause} 
+                   className={`px-5 py-1.5 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 ${
+                     isPlaying ? 'bg-amber-600 hover:bg-amber-500' : 'bg-indigo-600 hover:bg-indigo-500'
+                   }`}
+                 >
+                   <span>{isPlaying ? '⏸' : '▶'}</span>
+                   <span>{isPlaying ? 'Pause' : 'Play Propagation'}</span>
+                 </button>
+                 <button 
+                   onClick={() => { setIsPlaying(false); setCurrentStep(Math.min(timeline.length - 1, currentStep + 1)); }} 
+                   className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                 >
+                   Step ⏩
+                 </button>
+               </div>
+
+               <div className="flex items-center gap-1.5 text-xs bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                 <span className="font-semibold text-slate-500">Speed:</span>
+                 {(['Slow', 'Normal', 'Fast'] as const).map(s => {
+                   const val = s === 'Slow' ? 1000 : s === 'Normal' ? 500 : 200;
+                   return (
+                     <button 
+                       key={s} 
+                       onClick={() => setPlaybackSpeed(val)}
+                       className={`px-2 py-0.5 rounded transition-all ${
+                         playbackSpeed === val 
+                           ? 'bg-indigo-600 text-white font-bold shadow-xs' 
+                           : 'hover:bg-slate-200 text-slate-600'
+                       }`}
+                     >
+                       {s}
+                     </button>
+                   );
+                 })}
+               </div>
+            </div>
+
+            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200/60">
+               <div 
+                 className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
+                 style={{ width: `${(currentStep / Math.max(1, timeline.length - 1)) * 100}%` }}
+               />
+            </div>
+
+            <div className="flex justify-between items-center text-[11px] font-mono text-slate-500 px-1">
+              <span>Signal Propagation Layer {currentStep + 1} of {timeline.length}</span>
+              <span>{Math.round(((currentStep + 1) / timeline.length) * 100)}% Settled</span>
+            </div>
+          </div>
+          
+          {/* Framed Circuit Canvas with contained aesthetic */}
+          <div className="border border-slate-300/80 rounded-2xl overflow-hidden bg-slate-900/95 shadow-md h-[480px] relative">
+            <div className="absolute top-3 left-4 z-10 flex items-center gap-2 pointer-events-none">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="text-[11px] font-mono font-semibold text-slate-300 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700">
+                {activeLab.name}
+              </span>
+            </div>
+            <CircuitCanvas circuit={circuit} height={480} nodeValues={currentNodeValues} />
+          </div>
+        </div>
+      </div>
+
+      {/* Detailed Educational & Bitwise Walkthrough Section */}
+      <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-sm">
+        <h3 className="font-bold text-xl text-slate-900 mb-6 flex items-center gap-2.5 pb-4 border-b border-slate-200">
+          <span className="text-2xl">📖</span>
+          <span>How It Works & Bitwise Walkthrough: {activeLab.name}</span>
+        </h3>
+        <ArithmeticExplanation
+          labId={activeLab.id}
+          bitWidth={bitWidth}
+          inputA={inputA}
+          inputB={inputB}
+          carryIn={carryIn}
+          finalNodeValues={finalNodeValues}
+          showNoBorrowMode={showNoBorrowMode}
+        />
       </div>
     </div>
   );
 };
-

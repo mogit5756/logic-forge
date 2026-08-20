@@ -52,7 +52,27 @@ describe('NAND and NOR Converter Minimal Gate Counts & Accuracy', () => {
     expect(gateCount).toBe(4); // 1 shared NOR(A,A) inverter, 2 sum NORs, 1 output NOR
   });
 
-  it('Gate count bounds for 4-var and 5-var expressions stay linear to literal count', () => {
+  it('Complex 3-term 2-literal SOP: (!A AND B) OR (B AND !C) OR (A AND C) produces exact 8 NAND gates', () => {
+    const expr = "(!A AND B) OR (B AND !C) OR (A AND C)";
+    const ast = new Parser(expr).parse();
+    const nandAst = convertToNand(ast);
+    const circuit = astToCircuit(nandAst, ['A', 'B', 'C']);
+    const count = countLogicGates(circuit);
+    // 2 inverters (!A, !C) + 3 product NANDs + 3 combiner NANDs = 8
+    expect(count).toBe(8);
+  });
+
+  it('3-literal 2-term SOP: (!A AND !B AND C) OR (A AND B AND !C) produces exact 10 NAND gates', () => {
+    const expr = "(!A AND !B AND C) OR (A AND B AND !C)";
+    const ast = new Parser(expr).parse();
+    const nandAst = convertToNand(ast);
+    const circuit = astToCircuit(nandAst, ['A', 'B', 'C']);
+    const count = countLogicGates(circuit);
+    // 3 inverters (!A, !B, !C) + 3 gates for T1 + 3 gates for T2 + 1 output gate = 10
+    expect(count).toBe(10);
+  });
+
+  it('Gate count bounds for 4-var and 5-var expressions stay strictly minimal', () => {
     const expr = "(A AND B AND C) OR (B AND C AND D) OR (!A AND !D)";
     const ast = new Parser(expr).parse();
     const nandAst = convertToNand(ast);
@@ -66,11 +86,9 @@ describe('NAND and NOR Converter Minimal Gate Counts & Accuracy', () => {
     const nandCount = countLogicGates(nandCircuit);
     const norCount = countLogicGates(norCircuit);
 
-    // Standard has 5 ANDs (binary tree for 3 3-input terms) + 2 ORs + 2 NOTs = ~9 gates
     expect(stdCount).toBeLessThanOrEqual(10);
-    // NAND circuit should not explode; it should be within 2x standard gate count
-    expect(nandCount).toBeLessThanOrEqual(15);
-    expect(norCount).toBeLessThanOrEqual(25);
+    expect(nandCount).toBeLessThanOrEqual(14);
+    expect(norCount).toBeLessThanOrEqual(20);
   });
 
   it('Exhaustively verifies truth tables of Standard, NAND, and NOR for 3-variable expressions', () => {
