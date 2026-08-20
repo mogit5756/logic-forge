@@ -8,6 +8,7 @@ import { CircuitCanvas } from '../../components/circuit/CircuitCanvas';
 import { ArithmeticExplanation } from './ArithmeticExplanation';
 import { evaluateCircuitAllNodes } from '../../engine/simulator/simulator';
 import { assignLayers } from '../../engine/layout/layering';
+import { updateUrlParams, parseUrlState } from '../../utils/urlState';
 import type { Circuit } from '../../engine/types';
 
 type LabId = 'half-adder' | 'full-adder' | 'ripple-adder' | 'half-sub' | 'full-sub' | 'twos-sub' | 'mult-2x2' | 'mult-3x3';
@@ -23,6 +24,16 @@ const LABS: { id: LabId; name: string; category: string; hasWidth: boolean; defa
   { id: 'mult-3x3', name: '3x3 Binary Multiplier', category: 'Multipliers', hasWidth: false },
 ];
 
+interface ArithmeticPreset {
+  name: string;
+  category: string;
+  labId: LabId;
+  w?: number;
+  a: number;
+  b: number;
+  cin?: number;
+}
+
 export const ArithmeticTab: React.FC = () => {
   const [activeLab, setActiveLab] = useState(LABS[0]);
   const [bitWidth, setBitWidth] = useState(4);
@@ -30,6 +41,7 @@ export const ArithmeticTab: React.FC = () => {
   const [inputB, setInputB] = useState(0);
   const [carryIn, setCarryIn] = useState(0);
   const [showNoBorrowMode, setShowNoBorrowMode] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
 
   const [circuit, setCircuit] = useState<Circuit>(HalfAdderCircuit);
   const [finalNodeValues, setFinalNodeValues] = useState<Record<string, 0 | 1>>({});
@@ -54,6 +66,33 @@ export const ArithmeticTab: React.FC = () => {
 
   const hasCarryIn = activeLab.id === 'full-adder' || activeLab.id === 'full-sub' || activeLab.id === 'ripple-adder';
 
+  // Load from URL on mount
+  useEffect(() => {
+    const state = parseUrlState();
+    if (state && (state.tab === 'arithmetic' || state.lab)) {
+      if (state.lab) {
+        const found = LABS.find(l => l.id === state.lab);
+        if (found) setActiveLab(found);
+      }
+      if (state.w) setBitWidth(state.w);
+      if (state.a !== undefined) setInputA(state.a);
+      if (state.b !== undefined) setInputB(state.b);
+      if (state.cin !== undefined) setCarryIn(state.cin);
+    }
+  }, []);
+
+  // Sync to URL
+  useEffect(() => {
+    updateUrlParams({
+      tab: 'arithmetic',
+      lab: activeLab.id,
+      w: activeLab.hasWidth ? bitWidth : undefined,
+      a: inputA,
+      b: inputB,
+      cin: hasCarryIn ? carryIn : undefined
+    });
+  }, [activeLab.id, bitWidth, inputA, inputB, carryIn]);
+
   useEffect(() => {
     let c: Circuit;
     if (activeLab.id === 'half-adder') c = HalfAdderCircuit;
@@ -66,17 +105,11 @@ export const ArithmeticTab: React.FC = () => {
     else if (activeLab.id === 'mult-3x3') c = buildMultiplier(3, 3);
     else c = HalfAdderCircuit;
     
-    // Auto-layout generated circuits that don't have predefined positions
     if (activeLab.id.includes('mult') || activeLab.id === 'twos-sub' || activeLab.id === 'ripple-adder') {
        assignLayers(c);
     }
 
     setCircuit(c);
-    
-    // Reset inputs on change
-    setInputA(0);
-    setInputB(0);
-    setCarryIn(0);
     setIsPlaying(false);
     setCurrentStep(0);
   }, [activeLab, bitWidth]);
@@ -113,7 +146,6 @@ export const ArithmeticTab: React.FC = () => {
          depthMap[nid] = (node.type === 'INPUT' || node.type === 'CONSTANT') ? 0 : -1;
       });
       
-      // Calculate depth
       let changed = true;
       while(changed) {
          changed = false;
@@ -162,6 +194,58 @@ export const ArithmeticTab: React.FC = () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isPlaying, playbackSpeed, timeline.length]);
+
+  const handleCopyShareLink = () => {
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(window.location.href);
+      setCopyToast(true);
+      setTimeout(() => setCopyToast(false), 2500);
+    }
+  };
+
+  const presets: ArithmeticPreset[] = [
+    {
+      name: '3x3 Multiplier (5 × 7 = 35)',
+      category: 'Multiplication',
+      labId: 'mult-3x3',
+      a: 5,
+      b: 7
+    },
+    {
+      name: '2s-Comp Subtractor (7 − 3 = 4, No Borrow)',
+      category: 'Subtraction',
+      labId: 'twos-sub',
+      w: 4,
+      a: 7,
+      b: 3
+    },
+    {
+      name: '2s-Comp Subtractor (2 − 5 = −3, Borrow)',
+      category: 'Subtraction',
+      labId: 'twos-sub',
+      w: 4,
+      a: 2,
+      b: 5
+    },
+    {
+      name: '4-Bit Ripple Adder (9 + 7 + Cin = 17)',
+      category: 'Addition',
+      labId: 'ripple-adder',
+      w: 4,
+      a: 9,
+      b: 7,
+      cin: 1
+    }
+  ];
+
+  const applyPreset = (p: ArithmeticPreset) => {
+    const targetLab = LABS.find(l => l.id === p.labId);
+    if (targetLab) setActiveLab(targetLab);
+    if (p.w) setBitWidth(p.w);
+    setInputA(p.a);
+    setInputB(p.b);
+    if (p.cin !== undefined) setCarryIn(p.cin);
+  };
 
   let resultUI: React.ReactNode = null;
   if (activeLab.id.includes('adder')) {
@@ -258,7 +342,7 @@ export const ArithmeticTab: React.FC = () => {
 
   const handlePlayPause = () => {
     if (!isPlaying && currentStep >= timeline.length - 1) {
-       setCurrentStep(0); // Restart if at end
+       setCurrentStep(0);
     }
     setIsPlaying(!isPlaying);
   };
@@ -267,6 +351,26 @@ export const ArithmeticTab: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 max-w-7xl mx-auto">
+      {/* Quick-Start Examples Bar */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🚀</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Quick-Start Arithmetic Presets:</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {presets.map(p => (
+            <button
+              key={p.name}
+              onClick={() => applyPreset(p)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 border border-slate-200 text-slate-700 transition-all text-left flex items-center gap-1.5"
+            >
+              <span className="text-[10px] text-slate-400 font-mono">[{p.category}]</span>
+              <span>{p.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Circuit Selector Pills */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/80">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
@@ -274,16 +378,30 @@ export const ArithmeticTab: React.FC = () => {
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
             Select Arithmetic Circuit
           </h2>
-          <span className="text-xs text-slate-500 font-medium">
-            Standard Gate Topologies with Stepwise Signal Animation
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCopyShareLink}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-all flex items-center gap-1.5 shadow-xs"
+              title="Copy shareable direct link with current arithmetic settings"
+            >
+              <span>🔗</span>
+              <span>{copyToast ? 'Link Copied!' : 'Share'}</span>
+            </button>
+          </div>
         </div>
         
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2" role="tablist">
           {LABS.map(lab => (
             <button
               key={lab.id}
-              onClick={() => setActiveLab(lab as any)}
+              role="tab"
+              aria-selected={activeLab.id === lab.id}
+              onClick={() => {
+                setActiveLab(lab as any);
+                setInputA(0);
+                setInputB(0);
+                setCarryIn(0);
+              }}
               className={`p-2.5 rounded-xl text-xs font-semibold tracking-tight transition-all text-center flex flex-col items-center justify-center gap-1 border ${
                 activeLab.id === lab.id 
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' 
@@ -378,7 +496,7 @@ export const ArithmeticTab: React.FC = () => {
                     <span className="text-xs font-medium text-slate-700">End Carry Display:</span>
                     <button
                       onClick={() => setShowNoBorrowMode(!showNoBorrowMode)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors flex items-center gap-1.5"
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors flex items-center gap-1.5 shadow-xs"
                     >
                       <span>🔄</span>
                       <span>{showNoBorrowMode ? 'No-Borrow Mode' : 'Raw Cout Mode'}</span>
@@ -468,14 +586,13 @@ export const ArithmeticTab: React.FC = () => {
           </div>
           
           {/* Framed Circuit Canvas with contained aesthetic */}
-          <div className="border border-slate-300/80 rounded-2xl overflow-hidden bg-slate-900/95 shadow-md h-[480px] relative">
-            <div className="absolute top-3 left-4 z-10 flex items-center gap-2 pointer-events-none">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-[11px] font-mono font-semibold text-slate-300 bg-slate-800/90 px-2 py-0.5 rounded border border-slate-700">
-                {activeLab.name}
-              </span>
-            </div>
-            <CircuitCanvas circuit={circuit} height={480} nodeValues={currentNodeValues} />
+          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm h-[480px] relative p-2">
+            <CircuitCanvas 
+              circuit={circuit} 
+              height={460} 
+              nodeValues={currentNodeValues} 
+              title={`${activeLab.name} Circuit Schematic`}
+            />
           </div>
         </div>
       </div>

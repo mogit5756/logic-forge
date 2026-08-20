@@ -1,9 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SimplifierTab } from './features/simplifier/SimplifierTab';
 import { ArithmeticTab } from './features/arithmetic/ArithmeticTab';
+import { parseUrlState } from './utils/urlState';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'simplifier' | 'arithmetic'>('simplifier');
+
+  useEffect(() => {
+    const state = parseUrlState();
+    if (state) {
+      if (state.tab === 'arithmetic' || state.lab) {
+        setActiveTab('arithmetic');
+      } else if (state.tab === 'simplifier' || state.expr || state.min || state.mode) {
+        setActiveTab('simplifier');
+      }
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col font-sans bg-slate-100/60">
