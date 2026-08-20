@@ -5,7 +5,7 @@ export const WordProblemInput: React.FC = () => {
   const store = useLogicStore();
   const [loading, setLoading] = useState(false);
   const [parsedData, setParsedData] = useState<{ variables: Record<string, string>, expression: string, explanation: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; isHttp404: boolean } | null>(null);
 
   const handleParse = async () => {
     if (!store.wordProblemStr.trim()) return;
@@ -19,15 +19,28 @@ export const WordProblemInput: React.FC = () => {
         body: JSON.stringify({ problem: store.wordProblemStr })
       });
       if (!res.ok) {
-        throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+        let errorMsg = `Server returned ${res.status}`;
+        try {
+          const errData = await res.json();
+          if (errData.error && errData.error.message) {
+             errorMsg = errData.error.message;
+          } else if (errData.message) {
+             errorMsg = errData.message;
+          }
+        } catch(e) {
+          errorMsg = `Server returned ${res.status}: ${await res.text()}`;
+        }
+        setError({ message: errorMsg, isHttp404: res.status === 404 });
+        return;
       }
       const data = await res.json();
       if (!data.variables || !data.expression) {
-         throw new Error("Invalid response format from AI.");
+         setError({ message: "Invalid response format from AI.", isHttp404: false });
+         return;
       }
       setParsedData(data);
     } catch (err: any) {
-      setError(err.message || String(err));
+      setError({ message: err.message || String(err), isHttp404: false });
     } finally {
       setLoading(false);
     }
@@ -64,8 +77,8 @@ export const WordProblemInput: React.FC = () => {
             </svg>
             Error Processing Request
           </div>
-          <div>{error}</div>
-          {error.includes('404') && (
+          <div>{error.message}</div>
+          {error.isHttp404 && (
             <div className="mt-3 pt-3 border-t border-red-200 text-red-800">
               <strong>Note:</strong> The Word Problem AI feature requires a serverless backend to securely call the Gemini API. It appears the endpoint (<code>/api/parseLogic</code>) is unreachable. 
               <br /><br />
