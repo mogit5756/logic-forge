@@ -26,13 +26,14 @@ export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
     inputMap[v] = id;
   }
   
-  // Use a Map to cache visited AST node object references. 
-  // This turns the AST into a DAG and completely eliminates duplicate subexpressions/inverters.
-  const visited = new Map<ASTNode, string>();
+  // Use Maps to cache visited AST node object references and structural signatures.
+  // This turns the AST into a strictly minimal DAG and eliminates duplicate subexpressions and inverters.
+  const visitedObj = new Map<ASTNode, string>();
+  const visitedSig = new Map<string, string>();
   
   function traverse(node: ASTNode): string {
-    if (visited.has(node)) {
-      return visited.get(node)!;
+    if (visitedObj.has(node)) {
+      return visitedObj.get(node)!;
     }
     
     if (node.type === 'VAR') {
@@ -52,18 +53,29 @@ export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
       const id = generateId(`CONST_${node.value}`);
       const val: 0 | 1 = node.value === 1 || node.value === '1' ? 1 : 0;
       nodes[id] = { id, type: 'CONSTANT', label: node.value?.toString(), value: val, inputs: [] };
-      visited.set(node, id);
+      visitedObj.set(node, id);
       return id;
     }
-    
-    const id = generateId(node.type);
-    
-    // We must set it in visited BEFORE traversing children in case of loops (though ASTs are trees here)
-    visited.set(node, id);
     
     const gateInputs: string[] = [];
     if (node.left) gateInputs.push(traverse(node.left));
     if (node.right) gateInputs.push(traverse(node.right));
+    
+    // Structural signature for deduplicating identical subtrees/inverters
+    // For 2-input commutative gates, sort inputs to canonical form
+    const isCommutative = ['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR'].includes(node.type);
+    const sortedInputs = isCommutative ? [...gateInputs].sort() : gateInputs;
+    const signature = `${node.type}(${sortedInputs.join(',')})`;
+
+    if (visitedSig.has(signature)) {
+      const existingId = visitedSig.get(signature)!;
+      visitedObj.set(node, existingId);
+      return existingId;
+    }
+
+    const id = generateId(node.type);
+    visitedObj.set(node, id);
+    visitedSig.set(signature, id);
     
     nodes[id] = { id, type: node.type as GateType, inputs: gateInputs };
     return id;

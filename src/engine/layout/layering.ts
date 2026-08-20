@@ -33,7 +33,7 @@ export function assignLayers(circuit: Circuit): void {
     maxLayerIds[l].push(id);
   }
   
-  const LAYER_WIDTH = 120;
+  const LAYER_WIDTH = 160;
   const NODE_HEIGHT = 80;
   
   for (let l = 0; l <= maxGlobalLayer; l++) {

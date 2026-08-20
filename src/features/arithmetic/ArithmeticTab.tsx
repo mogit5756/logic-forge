@@ -5,6 +5,7 @@ import {
   buildRippleCarryAdder, buildTwosComplementSubtractor, buildMultiplier
 } from './predefinedCircuits';
 import { CircuitCanvas } from '../../components/circuit/CircuitCanvas';
+import { ArithmeticExplanation } from './ArithmeticExplanation';
 import { evaluateCircuitAllNodes } from '../../engine/simulator/simulator';
 import { assignLayers } from '../../engine/layout/layering';
 import type { Circuit } from '../../engine/types';
@@ -102,9 +103,6 @@ export const ArithmeticTab: React.FC = () => {
       const vals = evaluateCircuitAllNodes(circuit, inputs);
       setFinalNodeValues(vals);
       
-      // Compute timeline by layering evaluation
-      // Actually evaluateCircuitAllNodes just returns the final state.
-      // To simulate timeline: Group nodes by logic depth and incrementally activate them
       const depthMap: Record<string, number> = {};
       const depths: Record<string, 0 | 1>[] = [];
       
@@ -169,17 +167,17 @@ export const ArithmeticTab: React.FC = () => {
     if (activeLab.hasWidth) {
       let sum = 0;
       for (let i = 0; i < bitWidth; i++) if (finalNodeValues[`SUM${i}`]) sum += (1 << i);
-      resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Sum = {sum} (Cout = {finalNodeValues['COUT']})</p>;
+      resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Sum = {sum} (Cout = {finalNodeValues['COUT'] ?? 0})</p>;
     } else {
-      resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Sum = {finalNodeValues['SUM']}, Carry = {finalNodeValues['CARRY'] ?? finalNodeValues['COUT']}</p>;
+      resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Sum = {finalNodeValues['SUM'] ?? 0}, Carry = {finalNodeValues['CARRY'] ?? finalNodeValues['COUT'] ?? 0}</p>;
     }
   } else if (activeLab.id.includes('sub')) {
     if (activeLab.hasWidth) {
        let diff = 0;
        for (let i = 0; i < bitWidth; i++) if (finalNodeValues[`SUM${i}`]) diff += (1 << i);
-       resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Diff (2's Comp) = {diff} (Sign/Cout = {finalNodeValues['COUT']})</p>;
+       resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Diff = {diff} (COUT / NoBorrow = {finalNodeValues['COUT'] ?? 0})</p>;
     } else {
-       resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Diff = {finalNodeValues['DIFF']}, Bout = {finalNodeValues['BOUT']}</p>;
+       resultUI = <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Diff = {finalNodeValues['DIFF'] ?? 0}, Bout = {finalNodeValues['BOUT'] ?? 0}</p>;
     }
   } else if (activeLab.id.includes('mult')) {
       let prod = 0;
@@ -193,65 +191,13 @@ export const ArithmeticTab: React.FC = () => {
       resultUI = (
         <div className="flex flex-col gap-1">
           <p className="text-xl font-mono text-primary-600 font-bold leading-tight">Product = {prod}</p>
-          <p className="text-sm font-mono text-primary-800">
-            Binary: {Array.from({length: bts}, (_, i) => `P${bts - 1 - i}`).join(' ')}<br/>
-            Result: {binStr.split('').join('  ').padStart(bts * 3, ' ')} = {prod}
+          <p className="text-xs font-mono text-primary-800">
+            Bits: {Array.from({length: bts}, (_, i) => `P${bts - 1 - i}`).join(' ')}<br/>
+            Value: {binStr.split('').join('  ')}₂ = {prod}
           </p>
         </div>
       );
   }
-
-  const renderHowItWorks = () => {
-    switch (activeLab.id) {
-      case 'half-adder': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Adds two bits A and B.</div>
-          <div className="mb-3"><strong className="block text-surface-900">Logic Equations</strong> Sum = A ⊕ B <br/> Carry = A · B</div>
-          <div className="mb-3"><strong className="block text-surface-900">Worked Example</strong> {inputA} + {inputB}: Sum = {inputA ^ inputB}, Carry = {inputA & inputB}</div>
-        </>
-      );
-      case 'full-adder': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Adds three bits (A, B, Cin) to account for carry-in from a previous stage.</div>
-          <div className="mb-3"><strong className="block text-surface-900">Logic Equations</strong> Sum = A ⊕ B ⊕ Cin <br/> Cout = (A · B) + Cin · (A ⊕ B)</div>
-          <div className="mb-3"><strong className="block text-surface-900">How it's Built</strong> Two Half Adders and an OR gate.</div>
-          <div className="mb-3"><strong className="block text-surface-900">Worked Example</strong> {inputA} + {inputB} + {carryIn}: Sum = {(inputA ^ inputB ^ carryIn)}, Cout = {((inputA & inputB) | (carryIn & (inputA ^ inputB)))}</div>
-        </>
-      );
-      case 'ripple-adder': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Chains N Full Adders to add N-bit numbers.</div>
-          <div className="mb-3"><strong className="block text-surface-900">How it's Built</strong> The Cout of bit <em>i</em> connects to the Cin of bit <em>i+1</em>. This carry must "ripple" through the circuit from LSB to MSB.</div>
-        </>
-      );
-      case 'half-sub': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Subtracts bit B from A.</div>
-          <div className="mb-3"><strong className="block text-surface-900">Logic Equations</strong> Diff = A ⊕ B <br/> Borrow = A' · B</div>
-        </>
-      );
-      case 'full-sub': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Subtracts bit B and borrow-in (Bin) from A.</div>
-          <div className="mb-3"><strong className="block text-surface-900">Logic Equations</strong> Diff = A ⊕ B ⊕ Bin <br/> Bout = A'B + Bin(A ⊕ B)'</div>
-        </>
-      );
-      case 'twos-sub': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Performs subtraction by adding the two's complement of B to A.</div>
-          <div className="mb-3"><strong className="block text-surface-900">How it's Built</strong> B is inverted (1's complement). Setting Cin = 1 to the first adder adds 1, completing the 2's complement conversion. A - B = A + (-B) = A + (~B + 1).</div>
-        </>
-      );
-      case 'mult-2x2':
-      case 'mult-3x3': return (
-        <>
-          <div className="mb-3"><strong className="block text-surface-900">Overview</strong> Binary multiplication using partial products and adders.</div>
-          <div className="mb-3"><strong className="block text-surface-900">How it's Built</strong> AND gates compute partial products (A<sub>i</sub> · B<sub>j</sub>). These products are shifted and added together using Half and Full Adders, exactly like elementary school long multiplication.</div>
-        </>
-      );
-      default: return null;
-    }
-  };
 
   const handlePlayPause = () => {
     if (!isPlaying && currentStep >= timeline.length - 1) {
@@ -263,11 +209,11 @@ export const ArithmeticTab: React.FC = () => {
   const currentNodeValues = timeline[currentStep] || {};
 
   return (
-    <div className="flex flex-col gap-8 p-6 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-8 p-6 max-w-7xl mx-auto">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-surface-100">
         <h2 className="text-2xl font-bold mb-6">Arithmetic Circuits Lab</h2>
         
-        <div className="flex flex-wrap gap-4 mb-8 border-b pb-4">
+        <div className="flex flex-wrap gap-3 mb-8 border-b pb-4">
           {LABS.map(lab => (
             <button
               key={lab.id}
@@ -279,77 +225,84 @@ export const ArithmeticTab: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex flex-col md:flex-row gap-12">
-          <div className="flex-1 max-w-[300px]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Controls column */}
+          <div className="lg:col-span-1 flex flex-col gap-6">
             {activeLab.hasWidth && (
-              <div className="mb-6 bg-surface-50 p-4 rounded-lg border">
+              <div className="bg-surface-50 p-4 rounded-lg border">
                 <label className="block text-sm font-bold mb-2">Bit Width (N)</label>
                 <input 
                   type="range" min="2" max="8" step="1"
                   value={bitWidth} onChange={e => setBitWidth(parseInt(e.target.value))}
-                  className="w-full"
+                  className="w-full cursor-pointer accent-primary-600"
                 />
-                <div className="text-center font-bold text-primary-600">{bitWidth}-bit</div>
+                <div className="text-center font-bold text-primary-600 mt-1">{bitWidth}-bit</div>
               </div>
             )}
           
-            <h3 className="text-lg font-semibold mb-4">Inputs</h3>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Operand A (0 - {maxValA})</label>
-                <input 
-                  type="number" min="0" max={maxValA}
-                  value={inputA} onChange={e => setInputA(Math.min(maxValA, Math.max(0, parseInt(e.target.value) || 0)))}
-                  className="border p-2 rounded w-full focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                />
-                <span className="block mt-1 text-surface-500 font-mono text-xs text-right">
-                  Bin: {inputA.toString(2).padStart(getBitsA(), '0')}
-                </span>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Operand B (0 - {maxValB})</label>
-                <input 
-                  type="number" min="0" max={maxValB}
-                  value={inputB} onChange={e => setInputB(Math.min(maxValB, Math.max(0, parseInt(e.target.value) || 0)))}
-                  className="border p-2 rounded w-full focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                />
-                <span className="block mt-1 text-surface-500 font-mono text-xs text-right">
-                  Bin: {inputB.toString(2).padStart(getBitsB(), '0')}
-                </span>
-              </div>
-              {hasCarryIn && (
+            <div className="bg-surface-50 p-5 rounded-lg border">
+              <h3 className="text-base font-bold mb-4 text-surface-900">Input Controls</h3>
+              <div className="flex flex-col gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">{activeLab.id === 'full-sub' ? 'Borrow In' : 'Carry In'} (0 - 1)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-sm font-medium text-surface-700">Operand A (0 - {maxValA})</label>
+                    <span className="font-mono text-xs text-surface-500 font-semibold">
+                      {inputA.toString(2).padStart(getBitsA(), '0')}₂
+                    </span>
+                  </div>
                   <input 
-                    type="number" min="0" max="1"
-                    value={carryIn} onChange={e => setCarryIn(parseInt(e.target.value) || 0)}
-                    className="border p-2 rounded w-full focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                    type="number" min="0" max={maxValA}
+                    value={inputA} onChange={e => setInputA(Math.min(maxValA, Math.max(0, parseInt(e.target.value) || 0)))}
+                    className="border border-surface-300 p-2 rounded w-full bg-white font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                   />
                 </div>
-              )}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-sm font-medium text-surface-700">Operand B (0 - {maxValB})</label>
+                    <span className="font-mono text-xs text-surface-500 font-semibold">
+                      {inputB.toString(2).padStart(getBitsB(), '0')}₂
+                    </span>
+                  </div>
+                  <input 
+                    type="number" min="0" max={maxValB}
+                    value={inputB} onChange={e => setInputB(Math.min(maxValB, Math.max(0, parseInt(e.target.value) || 0)))}
+                    className="border border-surface-300 p-2 rounded w-full bg-white font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                  />
+                </div>
+                {hasCarryIn && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-surface-700">
+                      {activeLab.id === 'full-sub' ? 'Borrow In (Bin)' : 'Carry In (Cin)'} (0 or 1)
+                    </label>
+                    <select 
+                      value={carryIn} onChange={e => setCarryIn(parseInt(e.target.value) || 0)}
+                      className="border border-surface-300 p-2 rounded w-full bg-white font-mono focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                    >
+                      <option value={0}>0 (Low)</option>
+                      <option value={1}>1 (High)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="mt-8 p-6 bg-primary-50 rounded-lg border border-primary-100">
-              <h3 className="text-lg font-semibold mb-2 text-primary-900">Final Result</h3>
+            <div className="p-5 bg-primary-50/70 rounded-lg border border-primary-200">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-primary-900 mb-2">Simulated Output</h3>
               {resultUI}
-            </div>
-            
-            <div className="mt-8 text-sm text-surface-700 bg-surface-50 p-6 rounded-lg border border-surface-200 shadow-sm">
-              <h3 className="font-bold text-lg mb-4 text-surface-900">How it Works</h3>
-              {renderHowItWorks()}
             </div>
           </div>
           
-          <div className="flex-[2] flex flex-col min-w-0">
-            <div className="mb-4 bg-surface-100 p-3 rounded-lg border flex flex-col gap-3">
+          {/* Circuit Canvas & Simulation Playback */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            <div className="bg-surface-100 p-3 rounded-lg border flex flex-col gap-3">
               <div className="flex justify-between items-center flex-wrap gap-2">
                  <div className="flex gap-2">
-                   <button onClick={() => { setIsPlaying(false); setCurrentStep(0); }} className="px-3 py-1 bg-surface-300 hover:bg-surface-400 rounded text-sm font-bold">⏮ Reset</button>
-                   <button onClick={() => { setIsPlaying(false); setCurrentStep(Math.max(0, currentStep - 1)); }} className="px-3 py-1 bg-surface-300 hover:bg-surface-400 rounded text-sm font-bold">⏪ Step Back</button>
-                   <button onClick={handlePlayPause} className="px-6 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded text-sm font-bold shadow">{isPlaying ? '⏸ Pause' : '▶ Play'}</button>
-                   <button onClick={() => { setIsPlaying(false); setCurrentStep(Math.min(timeline.length - 1, currentStep + 1)); }} className="px-3 py-1 bg-surface-300 hover:bg-surface-400 rounded text-sm font-bold">Step Fwd ⏩</button>
+                   <button onClick={() => { setIsPlaying(false); setCurrentStep(0); }} className="px-3 py-1 bg-surface-200 hover:bg-surface-300 rounded text-xs font-bold transition-colors">⏮ Reset</button>
+                   <button onClick={() => { setIsPlaying(false); setCurrentStep(Math.max(0, currentStep - 1)); }} className="px-3 py-1 bg-surface-200 hover:bg-surface-300 rounded text-xs font-bold transition-colors">⏪ Step Back</button>
+                   <button onClick={handlePlayPause} className="px-5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded text-xs font-bold shadow transition-colors">{isPlaying ? '⏸ Pause' : '▶ Play Step'}</button>
+                   <button onClick={() => { setIsPlaying(false); setCurrentStep(Math.min(timeline.length - 1, currentStep + 1)); }} className="px-3 py-1 bg-surface-200 hover:bg-surface-300 rounded text-xs font-bold transition-colors">Step Fwd ⏩</button>
                  </div>
-                 <div className="flex items-center gap-2 text-sm bg-white px-2 py-1 rounded shadow-sm">
+                 <div className="flex items-center gap-2 text-xs bg-white px-2.5 py-1 rounded border shadow-sm">
                    <span className="font-semibold text-surface-600">Speed:</span>
                    {(['Slow', 'Normal', 'Fast'] as const).map(s => {
                      const val = s === 'Slow' ? 1000 : s === 'Normal' ? 500 : 200;
@@ -357,7 +310,7 @@ export const ArithmeticTab: React.FC = () => {
                        <button 
                          key={s} 
                          onClick={() => setPlaybackSpeed(val)}
-                         className={`px-2 py-0.5 rounded ${playbackSpeed === val ? 'bg-primary-100 text-primary-700 font-bold' : 'hover:bg-surface-100'}`}
+                         className={`px-2 py-0.5 rounded transition-colors ${playbackSpeed === val ? 'bg-primary-100 text-primary-700 font-bold' : 'hover:bg-surface-100 text-surface-600'}`}
                        >
                          {s}
                        </button>
@@ -372,16 +325,35 @@ export const ArithmeticTab: React.FC = () => {
                  />
               </div>
               <div className="text-center text-xs font-mono text-surface-500">
-                Step {currentStep + 1} of {timeline.length} (Logic Depth)
+                Logic Propagation Depth: Step {currentStep + 1} of {timeline.length}
               </div>
             </div>
             
-            <div className="border border-surface-200 rounded-lg overflow-hidden bg-white shadow-sm flex-1 min-h-[500px]">
-              <CircuitCanvas circuit={circuit} height={700} nodeValues={currentNodeValues} />
+            <div className="border border-surface-200 rounded-lg overflow-hidden bg-white shadow-sm h-[480px]">
+              <CircuitCanvas circuit={circuit} height={480} nodeValues={currentNodeValues} />
             </div>
+          </div>
+        </div>
+
+        {/* Detailed Educational & Bitwise Walkthrough Section */}
+        <div className="mt-10 pt-8 border-t border-surface-200">
+          <div className="bg-surface-50 p-6 md:p-8 rounded-xl border border-surface-200 shadow-sm">
+            <h3 className="font-bold text-xl text-surface-900 mb-6 flex items-center gap-2">
+              <span>📖</span>
+              <span>How It Works & Bitwise Walkthrough: {activeLab.name}</span>
+            </h3>
+            <ArithmeticExplanation
+              labId={activeLab.id}
+              bitWidth={bitWidth}
+              inputA={inputA}
+              inputB={inputB}
+              carryIn={carryIn}
+              finalNodeValues={finalNodeValues}
+            />
           </div>
         </div>
       </div>
     </div>
   );
 };
+
