@@ -2,18 +2,21 @@ import type { Circuit } from '../types';
 
 export function assignLayers(circuit: Circuit): void {
   const layers: Record<string, number> = {};
+  const visiting = new Set<string>();
   const { nodes, inputNodes } = circuit;
-  
+
   for (const id of inputNodes) {
-    layers[id] = 0;
+    if (nodes[id]) layers[id] = 0;
   }
-  
+
   function computeLayer(id: string): number {
     if (layers[id] !== undefined) return layers[id];
-    
+    if (visiting.has(id)) throw new Error(`Circuit contains a cycle involving node ${id}.`);
+
     const node = nodes[id];
-    if (!node) return 0;
-    
+    if (!node) throw new Error(`Circuit references missing node ${id}.`);
+    visiting.add(id);
+
     let maxDepth = -1;
     for (const inId of node.inputs) {
       const depth = computeLayer(inId);
@@ -21,6 +24,7 @@ export function assignLayers(circuit: Circuit): void {
     }
     
     layers[id] = maxDepth + 1;
+    visiting.delete(id);
     return layers[id];
   }
   

@@ -91,6 +91,46 @@ describe('NAND and NOR Converter Minimal Gate Counts & Accuracy', () => {
     expect(norCount).toBeLessThanOrEqual(20);
   });
 
+  it('Normalizes pre-existing NOR nodes when generating NAND-only circuits', () => {
+    const ast = {
+      type: 'NOR' as const,
+      left: { type: 'VAR' as const, value: 'A' },
+      right: { type: 'VAR' as const, value: 'B' }
+    };
+    const nandAst = convertToNand(ast);
+    const circuit = astToCircuit(nandAst, ['A', 'B']);
+    const gateTypes = Object.values(circuit.nodes)
+      .filter((n: any) => !['INPUT', 'OUTPUT', 'CONSTANT'].includes(n.type))
+      .map((n: any) => n.type);
+    expect(gateTypes.every(type => type === 'NAND')).toBe(true);
+    for (const a of [0, 1] as const) {
+      for (const b of [0, 1] as const) {
+        const output = Object.values(evaluateCircuit(circuit, { A: a, B: b }))[0];
+        expect(output).toBe((!(a || b) ? 1 : 0));
+      }
+    }
+  });
+
+  it('Normalizes pre-existing NAND nodes when generating NOR-only circuits', () => {
+    const ast = {
+      type: 'NAND' as const,
+      left: { type: 'VAR' as const, value: 'A' },
+      right: { type: 'VAR' as const, value: 'B' }
+    };
+    const norAst = convertToNor(ast);
+    const circuit = astToCircuit(norAst, ['A', 'B']);
+    const gateTypes = Object.values(circuit.nodes)
+      .filter((n: any) => !['INPUT', 'OUTPUT', 'CONSTANT'].includes(n.type))
+      .map((n: any) => n.type);
+    expect(gateTypes.every(type => type === 'NOR')).toBe(true);
+    for (const a of [0, 1] as const) {
+      for (const b of [0, 1] as const) {
+        const output = Object.values(evaluateCircuit(circuit, { A: a, B: b }))[0];
+        expect(output).toBe((!(a && b) ? 1 : 0));
+      }
+    }
+  });
+
   it('Exhaustively verifies truth tables of Standard, NAND, and NOR for 3-variable expressions', () => {
     const exprs = [
       'A AND B AND C',

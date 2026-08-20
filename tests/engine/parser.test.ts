@@ -38,6 +38,20 @@ describe('Expression Parser', () => {
     });
   });
   
+  it('parses constants and known multi-character variables without breaking compact notation', () => {
+    expect(new Parser('1').parse()).toEqual({ type: 'CONSTANT', value: 1 });
+    expect(new Parser('IN1 AND !X2', ['IN1', 'X2']).parse()).toEqual({
+      type: 'AND',
+      left: { type: 'VAR', value: 'IN1' },
+      right: { type: 'NOT', left: { type: 'VAR', value: 'X2' } }
+    });
+    expect(new Parser('AB').parse()).toEqual({
+      type: 'AND',
+      left: { type: 'VAR', value: 'A' },
+      right: { type: 'VAR', value: 'B' }
+    });
+  });
+
   it('handles parentheses', () => {
     const parser = new Parser("A(B+C)");
     expect(parser.parse()).toEqual({

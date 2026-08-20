@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateCircuit } from '../../src/engine/simulator/simulator';
+import { evaluateCircuit, evaluateCircuitAllNodes } from '../../src/engine/simulator/simulator';
 import { Circuit } from '../../src/engine/types';
 
 describe('Circuit Simulator', () => {
@@ -19,6 +19,32 @@ describe('Circuit Simulator', () => {
     expect(evaluateCircuit(circuit, { A: 0, B: 1 })).toEqual({ Y: 0 });
     expect(evaluateCircuit(circuit, { A: 1, B: 0 })).toEqual({ Y: 0 });
     expect(evaluateCircuit(circuit, { A: 1, B: 1 })).toEqual({ Y: 1 });
+  });
+
+  it('rejects missing inputs consistently in both evaluation modes', () => {
+    const circuit: Circuit = {
+      inputNodes: ['A'],
+      outputNodes: ['OUT'],
+      nodes: {
+        A: { id: 'A', type: 'INPUT', label: 'A', inputs: [] },
+        OUT: { id: 'OUT', type: 'OUTPUT', label: 'Y', inputs: ['A'] }
+      }
+    };
+    expect(() => evaluateCircuit(circuit, {})).toThrow(/Input value for A/);
+    expect(() => evaluateCircuitAllNodes(circuit, {})).toThrow(/Input value for A/);
+  });
+
+  it('rejects gates with invalid arity', () => {
+    const circuit: Circuit = {
+      inputNodes: [],
+      outputNodes: ['OUT'],
+      nodes: {
+        BAD: { id: 'BAD', type: 'NOT', inputs: [] },
+        OUT: { id: 'OUT', type: 'OUTPUT', label: 'Y', inputs: ['BAD'] }
+      }
+    };
+    expect(() => evaluateCircuit(circuit, {})).toThrow(/requires exactly one input/);
+    expect(() => evaluateCircuitAllNodes(circuit, {})).toThrow(/requires exactly one input/);
   });
 
   it('evaluates a full adder logic', () => {

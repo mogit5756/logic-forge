@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLogicStore } from '../../stores/useLogicStore';
 
 import { CircuitCanvas } from '../../components/circuit/CircuitCanvas';
@@ -20,6 +20,8 @@ export const SimplifierTab: React.FC = () => {
   const [dcInput, setDcInput] = useState(store.dontCares.join(','));
   const [localVars, setLocalVars] = useState<string[]>(store.variableNames);
   const [copyToast, setCopyToast] = useState(false);
+  const initialUrlState = useRef(parseUrlState());
+  const didInitialUrlSync = useRef(false);
 
   // Sync local variable names when store variable list changes in length or structure
   useEffect(() => {
@@ -39,40 +41,48 @@ export const SimplifierTab: React.FC = () => {
     if (currentDc !== storeDc) {
       setDcInput(storeDc);
     }
-  }, [store.isMintermInputMode, store.minterms, store.maxterms, store.dontCares]);
+  }, [store.isMintermInputMode, store.minterms, store.maxterms, store.dontCares, minMaxInput, dcInput]);
 
   // On mount: check URL parameters to load shared state
   useEffect(() => {
-    const state = parseUrlState();
-    if (state && (state.tab === 'simplifier' || state.expr || state.min || state.mode)) {
-      if (state.n && state.n >= 2 && state.n <= 6) {
-        store.setNumVariables(state.n);
+    const state = initialUrlState.current;
+    const actions = useLogicStore.getState();
+    if (state && (state.tab === 'simplifier' || state.expr || state.min || state.max || state.mode)) {
+      const targetNumVariables = state.n !== undefined && state.n >= 2 && state.n <= 6
+        ? state.n
+        : actions.numVariables;
+      if (state.n !== undefined && state.n >= 2 && state.n <= 6) {
+        actions.setNumVariables(targetNumVariables);
       }
       if (state.vars && state.vars.length > 0) {
-        state.vars.forEach((v, i) => {
-          if (i < store.numVariables) store.renameVariable(i, v);
+        state.vars.slice(0, targetNumVariables).forEach((v, i) => {
+          actions.renameVariable(i, v);
         });
       }
       if (state.mode) {
-        store.setInputMode(state.mode as any);
+        actions.setInputMode(state.mode);
       }
       if (state.expr) {
-        store.setExpression(state.expr);
-        store.process();
+        actions.setExpression(state.expr);
+        actions.process();
       } else if (state.min) {
-        store.setIsMintermInputMode(true);
-        store.setMintermsMaxterms(state.min, state.dc || []);
-        store.process();
+        actions.setIsMintermInputMode(true);
+        actions.setMintermsMaxterms(state.min, state.dc || []);
+        actions.process();
       } else if (state.max) {
-        store.setIsMintermInputMode(false);
-        store.setMintermsMaxterms(state.max, state.dc || []);
-        store.process();
+        actions.setIsMintermInputMode(false);
+        actions.setMintermsMaxterms(state.max, state.dc || []);
+        actions.process();
       }
     }
   }, []);
 
   // Update URL state whenever parameters change
   useEffect(() => {
+    if (!didInitialUrlSync.current) {
+      didInitialUrlSync.current = true;
+      if (initialUrlState.current) return;
+    }
     updateUrlParams({
       tab: 'simplifier',
       mode: store.inputMode,
@@ -83,7 +93,7 @@ export const SimplifierTab: React.FC = () => {
       max: store.inputMode === 'min_max' && !store.isMintermInputMode ? store.maxterms.join(',') : undefined,
       dc: store.dontCares.length > 0 ? store.dontCares.join(',') : undefined,
     });
-  }, [store.inputMode, store.numVariables, store.variableNames, store.expressionStr, store.minterms, store.maxterms, store.dontCares]);
+  }, [store.inputMode, store.numVariables, store.variableNames, store.expressionStr, store.minterms, store.maxterms, store.dontCares, store.isMintermInputMode]);
 
   // Safe Variable Renaming Handler: maintains local typing state without premature fallback insertion
   const handleVarChange = (index: number, rawVal: string) => {
@@ -127,7 +137,7 @@ export const SimplifierTab: React.FC = () => {
     if (!svgElement) return;
     const serializer = new XMLSerializer();
     let source = serializer.serializeToString(svgElement);
-    if (!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+    if (!source.match(/^<svg[^>]+xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
         source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
     const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });

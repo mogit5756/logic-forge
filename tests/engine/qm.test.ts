@@ -33,6 +33,20 @@ describe('Quine-McCluskey Engine', () => {
     expect(res).toEqual(['1']);
   });
 
+  it('treats an all-dont-care function as fully generalized', () => {
+    expect(simplifyQM([], [0, 1, 2, 3], 2)).toEqual(['1']);
+  });
+
+  it('normalizes duplicate, invalid, and overlapping indices', () => {
+    expect(simplifyQM([0, 0, 4, -1], [1, 1, 0, 8], 2)).toEqual(['0-']);
+  });
+
+  it('does not combine implicants that differ because of an existing dash', () => {
+    const result = simplifyQM([0, 1, 2, 4], [], 3);
+    expect(result.every(implicant => implicant.length === 3)).toBe(true);
+    expect(result).not.toContain('--0');
+  });
+
   it('timeout protection on large input', () => {
     // Simulate a complex 6 variable checkerboard
     const minterms = [];

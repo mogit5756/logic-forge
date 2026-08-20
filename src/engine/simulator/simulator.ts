@@ -32,31 +32,39 @@ export function evaluateCircuit(
         result = (node.value ?? 0) as 0 | 1;
         break;
       case 'NOT':
+        if (node.inputs.length !== 1) throw new Error(`NOT gate ${node.id} requires exactly one input`);
         result = evalNode(node.inputs[0]) === 0 ? 1 : 0;
         break;
       case 'AND':
+        if (node.inputs.length === 0) throw new Error(`AND gate ${node.id} requires at least one input`);
         result = node.inputs.every((i) => evalNode(i) === 1) ? 1 : 0;
         break;
       case 'OR':
+        if (node.inputs.length === 0) throw new Error(`OR gate ${node.id} requires at least one input`);
         result = node.inputs.some((i) => evalNode(i) === 1) ? 1 : 0;
         break;
       case 'NAND':
+        if (node.inputs.length === 0) throw new Error(`NAND gate ${node.id} requires at least one input`);
         result = node.inputs.every((i) => evalNode(i) === 1) ? 0 : 1;
         break;
       case 'NOR':
+        if (node.inputs.length === 0) throw new Error(`NOR gate ${node.id} requires at least one input`);
         result = node.inputs.some((i) => evalNode(i) === 1) ? 0 : 1;
         break;
       case 'XOR': {
+        if (node.inputs.length === 0) throw new Error(`XOR gate ${node.id} requires at least one input`);
         const count = node.inputs.reduce((sum, i) => sum + evalNode(i), 0);
         result = (count % 2) as 0 | 1;
         break;
       }
       case 'XNOR': {
+        if (node.inputs.length === 0) throw new Error(`XNOR gate ${node.id} requires at least one input`);
         const count = node.inputs.reduce((sum, i) => sum + evalNode(i), 0);
         result = (count % 2 === 0) ? 1 : 0;
         break;
       }
       case 'OUTPUT':
+        if (node.inputs.length !== 1) throw new Error(`OUTPUT node ${node.id} requires exactly one input`);
         result = evalNode(node.inputs[0]);
         break;
       default:
@@ -101,38 +109,46 @@ export function evaluateCircuitAllNodes(
         } else if (node.label && inputs[node.label] !== undefined) {
           result = inputs[node.label];
         } else {
-          result = 0; // Default to 0 for missing inputs in lab
+          throw new Error(`Input value for ${node.label || node.id} not provided`);
         }
         break;
       case 'CONSTANT':
         result = (node.value ?? 0) as 0 | 1;
         break;
       case 'NOT':
+        if (node.inputs.length !== 1) throw new Error(`NOT gate ${node.id} requires exactly one input`);
         result = evalNode(node.inputs[0]) === 0 ? 1 : 0;
         break;
       case 'AND':
+        if (node.inputs.length === 0) throw new Error(`AND gate ${node.id} requires at least one input`);
         result = node.inputs.every((i) => evalNode(i) === 1) ? 1 : 0;
         break;
       case 'OR':
+        if (node.inputs.length === 0) throw new Error(`OR gate ${node.id} requires at least one input`);
         result = node.inputs.some((i) => evalNode(i) === 1) ? 1 : 0;
         break;
       case 'NAND':
+        if (node.inputs.length === 0) throw new Error(`NAND gate ${node.id} requires at least one input`);
         result = node.inputs.every((i) => evalNode(i) === 1) ? 0 : 1;
         break;
       case 'NOR':
+        if (node.inputs.length === 0) throw new Error(`NOR gate ${node.id} requires at least one input`);
         result = node.inputs.some((i) => evalNode(i) === 1) ? 0 : 1;
         break;
       case 'XOR': {
+        if (node.inputs.length === 0) throw new Error(`XOR gate ${node.id} requires at least one input`);
         const count = node.inputs.reduce((sum, i) => sum + evalNode(i), 0);
         result = (count % 2) as 0 | 1;
         break;
       }
       case 'XNOR': {
+        if (node.inputs.length === 0) throw new Error(`XNOR gate ${node.id} requires at least one input`);
         const count = node.inputs.reduce((sum, i) => sum + evalNode(i), 0);
         result = (count % 2 === 0) ? 1 : 0;
         break;
       }
       case 'OUTPUT':
+        if (node.inputs.length !== 1) throw new Error(`OUTPUT node ${node.id} requires exactly one input`);
         result = evalNode(node.inputs[0]);
         break;
       default:

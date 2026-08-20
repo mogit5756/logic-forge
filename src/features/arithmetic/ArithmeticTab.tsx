@@ -34,6 +34,13 @@ interface ArithmeticPreset {
   cin?: number;
 }
 
+function operandBitsForLab(lab: { id: LabId; hasWidth: boolean }, width: number): number {
+  if (lab.id === 'mult-2x2') return 2;
+  if (lab.id === 'mult-3x3') return 3;
+  if (lab.hasWidth) return Math.min(8, Math.max(2, Math.trunc(width)));
+  return 1;
+}
+
 export const ArithmeticTab: React.FC = () => {
   const [activeLab, setActiveLab] = useState(LABS[0]);
   const [bitWidth, setBitWidth] = useState(4);
@@ -53,14 +60,8 @@ export const ArithmeticTab: React.FC = () => {
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(500); // 1000/500/200
   const timerRef = useRef<any>(null);
 
-  const getBitsA = () => {
-    if (activeLab.id.includes('mult-2x2')) return 2;
-    if (activeLab.id.includes('mult-3x3')) return 3;
-    if (activeLab.hasWidth) return bitWidth;
-    return 1;
-  };
-  
-  const getBitsB = () => getBitsA();
+  const getBitsA = () => operandBitsForLab(activeLab, bitWidth);
+  const getBitsB = () => operandBitsForLab(activeLab, bitWidth);
   const maxValA = (1 << getBitsA()) - 1;
   const maxValB = (1 << getBitsB()) - 1;
 
@@ -74,10 +75,10 @@ export const ArithmeticTab: React.FC = () => {
         const found = LABS.find(l => l.id === state.lab);
         if (found) setActiveLab(found);
       }
-      if (state.w) setBitWidth(state.w);
-      if (state.a !== undefined) setInputA(state.a);
-      if (state.b !== undefined) setInputB(state.b);
-      if (state.cin !== undefined) setCarryIn(state.cin);
+      if (state.w !== undefined) setBitWidth(Math.min(8, Math.max(2, Math.trunc(state.w))));
+      if (state.a !== undefined && Number.isFinite(state.a)) setInputA(Math.max(0, Math.trunc(state.a)));
+      if (state.b !== undefined && Number.isFinite(state.b)) setInputB(Math.max(0, Math.trunc(state.b)));
+      if (state.cin !== undefined) setCarryIn(state.cin === 1 ? 1 : 0);
     }
   }, []);
 
@@ -91,7 +92,13 @@ export const ArithmeticTab: React.FC = () => {
       b: inputB,
       cin: hasCarryIn ? carryIn : undefined
     });
-  }, [activeLab.id, bitWidth, inputA, inputB, carryIn]);
+  }, [activeLab, bitWidth, inputA, inputB, carryIn, hasCarryIn]);
+
+  useEffect(() => {
+    setInputA(value => Math.min(maxValA, Math.max(0, Math.trunc(Number.isFinite(value) ? value : 0))));
+    setInputB(value => Math.min(maxValB, Math.max(0, Math.trunc(Number.isFinite(value) ? value : 0))));
+    setCarryIn(value => value === 1 ? 1 : 0);
+  }, [maxValA, maxValB]);
 
   useEffect(() => {
     let c: Circuit;
@@ -112,12 +119,12 @@ export const ArithmeticTab: React.FC = () => {
     setCircuit(c);
     setIsPlaying(false);
     setCurrentStep(0);
-  }, [activeLab, bitWidth]);
+  }, [activeLab.id, bitWidth]);
 
   useEffect(() => {
     const inputs: Record<string, 0 | 1> = {};
-    const bA = getBitsA();
-    const bB = getBitsB();
+    const bA = operandBitsForLab(activeLab, bitWidth);
+    const bB = operandBitsForLab(activeLab, bitWidth);
     
     if (bA === 1) {
       inputs['A'] = (inputA & 1) as 0 | 1;
@@ -175,8 +182,12 @@ export const ArithmeticTab: React.FC = () => {
       
     } catch (e) {
       console.error(e);
+      setFinalNodeValues({});
+      setTimeline([]);
+      setCurrentStep(0);
+      setIsPlaying(false);
     }
-  }, [circuit, inputA, inputB, carryIn]);
+  }, [circuit, activeLab, bitWidth, inputA, inputB, carryIn]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -544,7 +555,7 @@ export const ArithmeticTab: React.FC = () => {
                    <span>{isPlaying ? 'Pause' : 'Play Propagation'}</span>
                  </button>
                  <button 
-                   onClick={() => { setIsPlaying(false); setCurrentStep(Math.min(timeline.length - 1, currentStep + 1)); }} 
+                   onClick={() => { setIsPlaying(false); setCurrentStep(timeline.length > 0 ? Math.min(timeline.length - 1, currentStep + 1) : 0); }}
                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
                  >
                    Step ⏩

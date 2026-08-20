@@ -88,6 +88,18 @@ describe('Arithmetic Circuits', () => {
     expect(result['COUT']).toBe(1);
   });
 
+  it('Two’s-complement subtractor exposes only A/B inputs, not constant CIN', () => {
+    const sub = buildTwosComplementSubtractor(4);
+    expect(sub.inputNodes).not.toContain('CIN');
+    expect(sub.inputNodes).toHaveLength(8);
+  });
+
+  it('rejects unsupported arithmetic widths instead of returning incomplete circuits', () => {
+    expect(() => buildRippleCarryAdder(0)).toThrow(/bit width/);
+    expect(() => buildRippleCarryAdder(9)).toThrow(/bit width/);
+    expect(() => buildMultiplier(4, 4)).toThrow(/Only 2x2 and 3x3/);
+  });
+
   it('4-bit Twos Complement Subtractor (A > B)', () => {
     const sub = buildTwosComplementSubtractor(4);
     // 7 (0111) - 2 (0010) = 5 (0101)

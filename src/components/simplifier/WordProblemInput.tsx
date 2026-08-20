@@ -18,27 +18,24 @@ export const WordProblemInput: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ problem: store.wordProblemStr })
       });
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        let errorMsg = `Server returned ${res.status}`;
-        try {
-          const errData = await res.json();
-          if (errData.error && errData.error.message) {
-             errorMsg = errData.error.message;
-          } else if (errData.message) {
-             errorMsg = errData.message;
-          }
-        } catch(e) {
-          errorMsg = `Server returned ${res.status}: ${await res.text()}`;
-        }
+        const rawError = data?.error;
+        const errorMsg = typeof rawError === 'string'
+          ? rawError
+          : rawError?.message || data?.message || `Server returned ${res.status}`;
         setError({ message: errorMsg, isHttp404: res.status === 404 });
         return;
       }
-      const data = await res.json();
-      if (!data.variables || !data.expression) {
-         setError({ message: "Invalid response format from AI.", isHttp404: false });
-         return;
+      if (!data || !data.variables || typeof data.variables !== 'object' || typeof data.expression !== 'string' || !data.expression.trim()) {
+        setError({ message: 'Invalid response format from AI.', isHttp404: false });
+        return;
       }
-      setParsedData(data);
+      setParsedData({
+        variables: data.variables,
+        expression: data.expression,
+        explanation: typeof data.explanation === 'string' ? data.explanation : 'The logic expression was generated from the supplied description.'
+      });
     } catch (err: any) {
       setError({ message: err.message || String(err), isHttp404: false });
     } finally {

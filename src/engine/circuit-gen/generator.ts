@@ -14,12 +14,17 @@ export function getVariablesFromAST(node: ASTNode, vars: Set<string> = new Set()
 }
 
 export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
+  if (!ast || typeof ast !== 'object' || !ast.type) {
+    throw new Error('Cannot generate a circuit from an empty or malformed AST.');
+  }
   idCounter = 0;
   const nodes: Record<string, CircuitNode> = {};
   const inputNodes: string[] = [];
   
   const inputMap: Record<string, string> = {};
-  for (const v of variables) {
+  for (const rawName of variables) {
+    const v = String(rawName).trim();
+    if (!v || inputMap[v]) continue;
     const id = generateId(`IN_${v}`);
     nodes[id] = { id, type: 'INPUT', label: v, inputs: [] };
     inputNodes.push(id);
@@ -50,13 +55,32 @@ export function astToCircuit(ast: ASTNode, variables: string[]): Circuit {
     }
     
     if (node.type === 'CONSTANT') {
-      const id = generateId(`CONST_${node.value}`);
       const val: 0 | 1 = node.value === 1 || node.value === '1' ? 1 : 0;
-      nodes[id] = { id, type: 'CONSTANT', label: node.value?.toString(), value: val, inputs: [] };
+      const signature = `CONSTANT(${val})`;
+      if (visitedSig.has(signature)) {
+        const existingId = visitedSig.get(signature)!;
+        visitedObj.set(node, existingId);
+        return existingId;
+      }
+      const id = generateId(`CONST_${val}`);
+      nodes[id] = { id, type: 'CONSTANT', label: String(val), value: val, inputs: [] };
       visitedObj.set(node, id);
+      visitedSig.set(signature, id);
       return id;
     }
-    
+
+    const unaryTypes = new Set(['NOT']);
+    const binaryTypes = new Set(['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR']);
+    if (unaryTypes.has(node.type) && !node.left) {
+      throw new Error(`Malformed ${node.type} node: missing left operand.`);
+    }
+    if (binaryTypes.has(node.type) && (!node.left || !node.right)) {
+      throw new Error(`Malformed ${node.type} node: both operands are required.`);
+    }
+    if (!unaryTypes.has(node.type) && !binaryTypes.has(node.type)) {
+      throw new Error(`Unsupported AST node type: ${node.type}`);
+    }
+
     const gateInputs: string[] = [];
     if (node.left) gateInputs.push(traverse(node.left));
     if (node.right) gateInputs.push(traverse(node.right));

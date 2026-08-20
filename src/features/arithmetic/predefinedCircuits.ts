@@ -71,7 +71,15 @@ export const FullSubtractorCircuit: Circuit = {
   }
 };
 
+function assertBitWidth(bits: number, label: string): number {
+  if (!Number.isInteger(bits) || bits < 1 || bits > 8) {
+    throw new Error(`${label} bit width must be an integer between 1 and 8.`);
+  }
+  return bits;
+}
+
 export function buildRippleCarryAdder(bits: number): Circuit {
+  bits = assertBitWidth(bits, 'Adder');
   const nodes: Circuit['nodes'] = {};
   const inputNodes: string[] = [];
   const outputNodes: string[] = [];
@@ -117,6 +125,7 @@ export function buildRippleCarryAdder(bits: number): Circuit {
 }
 
 export function buildTwosComplementSubtractor(bits: number): Circuit {
+  bits = assertBitWidth(bits, 'Subtractor');
   // Built using adder, where B is inverted and Cin = 1
   const adder = buildRippleCarryAdder(bits);
   const nodes: Circuit['nodes'] = {};
@@ -143,10 +152,21 @@ export function buildTwosComplementSubtractor(bits: number): Circuit {
     nodes[and1].inputs = [`A${i}`, notB];
   }
   
-  return { nodes, inputNodes: adder.inputNodes, outputNodes: adder.outputNodes };
+  return {
+    nodes,
+    inputNodes: adder.inputNodes.filter(id => id !== 'CIN'),
+    outputNodes: adder.outputNodes
+  };
 }
 
 export function buildMultiplier(bitsA: number, bitsB: number): Circuit {
+  if (!Number.isInteger(bitsA) || !Number.isInteger(bitsB) || bitsA < 1 || bitsB < 1) {
+    throw new Error('Multiplier widths must be positive integers.');
+  }
+  if (!((bitsA === 2 && bitsB === 2) || (bitsA === 3 && bitsB === 3))) {
+    throw new Error('Only 2x2 and 3x3 multiplier circuits are currently supported.');
+  }
+
   // A simplistic layout for multipliers without deep optimization.
   // 2x2 multiplier:
   const nodes: Circuit['nodes'] = {};
@@ -172,10 +192,8 @@ export function buildMultiplier(bitsA: number, bitsB: number): Circuit {
       }
   }
   
-  // Actually building the full multiplier properly with layered adders is complex for layout.
-  // Let's implement 2x2 manually since 3x3 is too large to auto-layout without a proper layout engine.
-  // Wait, I can just use buildRippleCarryAdder logic sequentially.
-  
+  // The supported widths below are implemented explicitly for predictable output labels.
+
   // Simplified 2x2:
   if (bitsA === 2 && bitsB === 2) {
       nodes['P0'] = { id: 'P0', type: 'OUTPUT', label: 'P0', inputs: [pp[0][0]], x: 600, y: 0 };

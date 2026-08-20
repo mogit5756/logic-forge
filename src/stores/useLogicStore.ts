@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Parser } from '../engine/expression/parser';
+import { isValidVariableName, Parser } from '../engine/expression/parser';
 import { simplifyQM, qmFormatSOP, qmFormatPOS } from '../engine/quine-mccluskey/qm';
 import { astToCircuit, getVariablesFromAST } from '../engine/circuit-gen/generator';
 import { convertToNand, convertToNor } from '../engine/converters/nand-nor';
@@ -84,13 +84,15 @@ export const useLogicStore = create<LogicState>((set, get) => ({
   verificationResult: null,
 
   setNumVariables: (n: number) => {
-    const vars = DEFAULT_VARS.slice(0, n);
+    const parsed = Number.isFinite(n) ? Math.trunc(n) : 3;
+    const safeNumVariables = Math.min(6, Math.max(2, parsed));
+    const vars = DEFAULT_VARS.slice(0, safeNumVariables);
     set({
-      numVariables: n,
+      numVariables: safeNumVariables,
       variableNames: vars,
-      truthTable: createEmptyTruthTable(n, vars),
+      truthTable: createEmptyTruthTable(safeNumVariables, vars),
       minterms: [],
-      maxterms: Array.from({length: 1 << n}, (_, i) => i),
+      maxterms: Array.from({length: 1 << safeNumVariables}, (_, i) => i),
       dontCares: [],
       simplifiedSOP: null,
       simplifiedPOS: null,
@@ -105,18 +107,52 @@ export const useLogicStore = create<LogicState>((set, get) => ({
   
   renameVariable: (index: number, name: string) => {
     const { variableNames, numVariables } = get();
+    const normalizedName = name.trim().toUpperCase();
+    if (index < 0 || index >= numVariables || !isValidVariableName(normalizedName)) return;
+
+    const oldName = variableNames[index];
     const newVars = [...variableNames];
-    newVars[index] = name.trim().toUpperCase();
-    
-    // Check duplicates
-    if (new Set(newVars).size !== newVars.length) {
-      return; // Handled by UI validation, don't update if duplicate
-    }
-    
-    set({ variableNames: newVars, truthTable: createEmptyTruthTable(numVariables, newVars) });
+    newVars[index] = normalizedName;
+
+    if (new Set(newVars.slice(0, numVariables)).size !== numVariables) return;
+
+    const remappedTruthTable = get().truthTable.map(row => {
+      const inputs = { ...row.inputs };
+      const oldValue = inputs[oldName];
+      delete inputs[oldName];
+      inputs[normalizedName] = oldValue ?? 0;
+      return { ...row, inputs };
+    });
+    const currentExpression = get().inputMode === 'expression'
+      ? get().expressionStr.replace(new RegExp(`\\b${oldName.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'g'), normalizedName)
+      : get().expressionStr;
+
+    set({
+      variableNames: newVars,
+      truthTable: remappedTruthTable,
+      expressionStr: currentExpression,
+      simplifiedSOP: null,
+      simplifiedPOS: null,
+      primeImplicants: [],
+      circuitDAG: null,
+      nandDAG: null,
+      norDAG: null,
+      verificationResult: null,
+      error: null
+    });
   },
   
-  setInputMode: (mode) => set({ inputMode: mode, error: null }),
+  setInputMode: (mode) => set({
+    inputMode: mode,
+    simplifiedSOP: null,
+    simplifiedPOS: null,
+    primeImplicants: [],
+    circuitDAG: null,
+    nandDAG: null,
+    norDAG: null,
+    verificationResult: null,
+    error: null
+  }),
   setIsMintermInputMode: (isMin) => {
     const { minterms, maxterms, dontCares } = get();
     set({ isMintermInputMode: isMin });
@@ -130,6 +166,7 @@ export const useLogicStore = create<LogicState>((set, get) => ({
   
   updateTruthTableOutput: (index, val) => {
     const { truthTable } = get();
+    if (index < 0 || index >= truthTable.length || !truthTable[index]) return;
     const newTable = [...truthTable];
     newTable[index] = { ...newTable[index], output: val };
     
@@ -142,57 +179,116 @@ export const useLogicStore = create<LogicState>((set, get) => ({
       else if (row.output === 'X') dcs.push(i);
     });
     
-    set({ truthTable: newTable, minterms: mins, maxterms: maxs, dontCares: dcs });
+    set({
+      truthTable: newTable,
+      minterms: mins,
+      maxterms: maxs,
+      dontCares: dcs,
+      simplifiedSOP: null,
+      simplifiedPOS: null,
+      primeImplicants: [],
+      circuitDAG: null,
+      nandDAG: null,
+      norDAG: null,
+      verificationResult: null,
+      error: null
+    });
   },
   
   setMintermsMaxterms: (terms, dcs = []) => {
     const { numVariables, isMintermInputMode, variableNames } = get();
     const max = 1 << numVariables;
+    const normalizeIndices = (values: number[]) => [...new Set(values.filter(value => Number.isInteger(value) && value >= 0 && value < max))];
+    const requestedTerms = normalizeIndices(terms);
+    const requestedDontCares = normalizeIndices(dcs).filter(index => !requestedTerms.includes(index));
+    const termSet = new Set(requestedTerms);
+    const dcSet = new Set(requestedDontCares);
     const newTable = createEmptyTruthTable(numVariables, variableNames);
-    
     const mins: number[] = [];
     const maxs: number[] = [];
-    
-    if (isMintermInputMode) {
-      terms.forEach(m => { if(m < max) { newTable[m].output = 1; mins.push(m); } });
-      dcs.forEach(d => { if(d < max) { newTable[d].output = 'X'; } });
-      for (let i = 0; i < max; i++) {
-        if (newTable[i].output === 0) maxs.push(i);
-      }
-    } else {
-      terms.forEach(m => { if(m < max) { newTable[m].output = 0; maxs.push(m); } });
-      dcs.forEach(d => { if(d < max) { newTable[d].output = 'X'; } });
-      for (let i = 0; i < max; i++) {
-        if (newTable[i].output === 0 && !terms.includes(i) && !dcs.includes(i)) {
-          newTable[i].output = 1;
-          mins.push(i);
-        } else if (newTable[i].output !== 'X' && !maxs.includes(i)) {
-          newTable[i].output = 1;
-          mins.push(i);
-        }
+
+    for (let i = 0; i < max; i++) {
+      if (dcSet.has(i)) {
+        newTable[i].output = 'X';
+      } else if (isMintermInputMode && termSet.has(i)) {
+        newTable[i].output = 1;
+        mins.push(i);
+      } else if (!isMintermInputMode && termSet.has(i)) {
+        newTable[i].output = 0;
+        maxs.push(i);
+      } else if (isMintermInputMode) {
+        maxs.push(i);
+      } else {
+        newTable[i].output = 1;
+        mins.push(i);
       }
     }
-    
-    set({ minterms: mins, maxterms: maxs, dontCares: dcs, truthTable: newTable });
+
+    set({
+      minterms: mins,
+      maxterms: maxs,
+      dontCares: requestedDontCares,
+      truthTable: newTable,
+      simplifiedSOP: null,
+      simplifiedPOS: null,
+      primeImplicants: [],
+      circuitDAG: null,
+      nandDAG: null,
+      norDAG: null,
+      verificationResult: null,
+      error: null
+    });
   },
   
-  setExpression: (expr) => set({ expressionStr: expr }),
+  setExpression: (expr) => set({
+    expressionStr: expr,
+    simplifiedSOP: null,
+    simplifiedPOS: null,
+    primeImplicants: [],
+    circuitDAG: null,
+    nandDAG: null,
+    norDAG: null,
+    verificationResult: null,
+    error: null
+  }),
   setWordProblem: (str) => set({ wordProblemStr: str }),
   
   applyWordProblemLogic: (vars: Record<string, string>, expr: string) => {
-    const keys = Object.keys(vars).sort();
-    const numVars = Math.max(keys.length, 2);
-    const newVars = keys.slice(0, numVars);
-    while (newVars.length < numVars) {
-      newVars.push(DEFAULT_VARS[newVars.length]);
+    const keys = Object.keys(vars).map(key => key.trim().toUpperCase()).filter(Boolean);
+    if (keys.length === 0 || keys.length > 6) {
+      set({ error: 'The word-problem result must contain between 1 and 6 variables.' });
+      return;
     }
-    
+
+    const aliases = new Map<string, string>();
+    const usedAliases = new Set<string>();
+    keys.forEach((key, index) => {
+      const candidate = isValidVariableName(key) && !usedAliases.has(key) ? key : DEFAULT_VARS[index];
+      aliases.set(key, candidate);
+      usedAliases.add(candidate);
+    });
+
+    const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let normalizedExpression = expr.toUpperCase();
+    for (const key of [...keys].sort((a, b) => b.length - a.length)) {
+      const alias = aliases.get(key)!;
+      normalizedExpression = normalizedExpression.replace(new RegExp(`\\b${escapeRegExp(key)}\\b`, 'g'), alias);
+    }
+
+    const newVars = [...new Set(keys.map(key => aliases.get(key)!))];
+    const numVars = Math.max(newVars.length, 2);
+    while (newVars.length < numVars) newVars.push(DEFAULT_VARS[newVars.length]);
+
     set({
       numVariables: numVars,
       variableNames: newVars,
-      expressionStr: expr,
+      expressionStr: normalizedExpression,
       inputMode: 'expression',
-      truthTable: createEmptyTruthTable(numVars, newVars)
+      minterms: [],
+      maxterms: Array.from({ length: 1 << numVars }, (_, i) => i),
+      dontCares: [],
+      truthTable: createEmptyTruthTable(numVars, newVars),
+      error: null
     });
     
     // Automatically process after setting
@@ -211,7 +307,8 @@ export const useLogicStore = create<LogicState>((set, get) => ({
     try {
       let ast = null;
       if (state.inputMode === 'expression') {
-        const parser = new Parser(state.expressionStr);
+        dcs = [];
+        const parser = new Parser(state.expressionStr, state.variableNames.slice(0, state.numVariables));
         ast = parser.parse();
         
         const usedVars = Array.from(getVariablesFromAST(ast));
@@ -219,8 +316,10 @@ export const useLogicStore = create<LogicState>((set, get) => ({
         // Merge missing vars from expression into our list
         const currentSet = new Set(state.variableNames.slice(0, state.numVariables));
         usedVars.forEach(v => currentSet.add(v));
-        let vars = Array.from(currentSet).sort();
-        if (vars.length > 6) vars = vars.slice(0, 6);
+        const vars = Array.from(currentSet).sort();
+        if (vars.length > 6) {
+          throw new Error('Expressions with more than 6 variables are not supported.');
+        }
         
         const actualNumVars = vars.length;
         
@@ -265,7 +364,7 @@ export const useLogicStore = create<LogicState>((set, get) => ({
       // Generate Circuits
       let finalAst = null;
       try {
-        finalAst = new Parser(selectedExpression).parse();
+        finalAst = new Parser(selectedExpression, varsToUse).parse();
       } catch (e) {
         if (selectedExpression === '1' || selectedExpression === '0') {
           // Wrap literals manually if parsing simple bits fails or use special const AST

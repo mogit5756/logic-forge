@@ -109,6 +109,20 @@ export function convertToNand(node: ASTNode): ASTNode {
       return nandNot(invProd);
     }
 
+    case 'NAND':
+      // NAND is already in the target family; still normalize both inputs
+      // because a programmatically supplied AST may contain mixed gate types.
+      return {
+        type: 'NAND',
+        left: convertToNand(node.left!),
+        right: convertToNand(node.right!)
+      };
+
+    case 'NOR':
+      // NOR(a,b) = NOT(a OR b). Convert the OR expression to NANDs first,
+      // then realize the final inversion with a NAND used as an inverter.
+      return nandNot(convertToNand({ type: 'OR', left: node.left, right: node.right }));
+
     case 'XOR': {
       const left = convertToNand(node.left!);
       const right = convertToNand(node.right!);
@@ -168,6 +182,20 @@ export function convertToNor(node: ASTNode): ASTNode {
       const invSum = buildInvertedSumNor(node);
       return norNot(invSum);
     }
+
+    case 'NOR':
+      // NOR is already in the target family; still normalize both inputs
+      // because a programmatically supplied AST may contain mixed gate types.
+      return {
+        type: 'NOR',
+        left: convertToNor(node.left!),
+        right: convertToNor(node.right!)
+      };
+
+    case 'NAND':
+      // NAND(a,b) = NOT(a AND b). Convert the AND expression to NORs first,
+      // then realize the final inversion with a NOR used as an inverter.
+      return norNot(convertToNor({ type: 'AND', left: node.left, right: node.right }));
 
     case 'XOR': {
       const left = convertToNor(node.left!);

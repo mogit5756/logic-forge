@@ -4,10 +4,21 @@ export function simplifyQM(
   numVariables: number,
   timeoutMs: number = 2000
 ): string[] {
-  // Return early for edge cases
-  if (minterms.length === 0) return [];
+  if (!Number.isInteger(numVariables) || numVariables < 1 || numVariables > 6) {
+    throw new Error('Quine–McCluskey supports between 1 and 6 variables.');
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('Simplification timeout must be a positive number.');
+  }
+
   const maxTerms = 1 << numVariables;
-  if (minterms.length + dontCares.length === maxTerms) return ['1'];
+  const normalize = (values: number[]) => [...new Set(values.filter(value => Number.isInteger(value) && value >= 0 && value < maxTerms))];
+  const normalizedMinterms = normalize(minterms);
+  const normalizedDontCares = normalize(dontCares).filter(value => !normalizedMinterms.includes(value));
+
+  // Return early for edge cases. All don't-cares may be assigned to 1.
+  if (normalizedMinterms.length + normalizedDontCares.length === maxTerms) return ['1'];
+  if (normalizedMinterms.length === 0) return [];
 
   const startTime = Date.now();
   const checkTimeout = () => {
@@ -18,7 +29,7 @@ export function simplifyQM(
 
   // 1. Group implicants by number of 1s
   let currentImplicants: Set<string> = new Set();
-  const allTerms = [...new Set([...minterms, ...dontCares])];
+  const allTerms = [...new Set([...normalizedMinterms, ...normalizedDontCares])];
   const implicantMinterms = new Map<string, number[]>();
 
   for (const m of allTerms) {
@@ -38,11 +49,14 @@ export function simplifyQM(
     let diffCount = 0;
     let res = '';
     for (let i = 0; i < numVariables; i++) {
-      if (a[i] !== b[i]) {
+      if (a[i] === b[i]) {
+        res += a[i];
+      } else if (a[i] === '-' || b[i] === '-') {
+        combineMemo.set(key, null);
+        return null;
+      } else {
         diffCount++;
         res += '-';
-      } else {
-        res += a[i];
       }
       if (diffCount > 1) {
         combineMemo.set(key, null);
@@ -74,8 +88,12 @@ export function simplifyQM(
             combinedThisRound.add(a);
             combinedThisRound.add(b);
             
-            // merge minterms
-            const mins = new Set([...implicantMinterms.get(a)!, ...implicantMinterms.get(b)!]);
+            // Merge coverage from every pair that produces this implicant.
+            const mins = new Set([
+              ...(implicantMinterms.get(combined) ?? []),
+              ...(implicantMinterms.get(a) ?? []),
+              ...(implicantMinterms.get(b) ?? [])
+            ]);
             implicantMinterms.set(combined, Array.from(mins));
           }
         }
@@ -92,7 +110,7 @@ export function simplifyQM(
   
   // 2. Prime Implicant Chart
   const chart: Record<number, string[]> = {};
-  for (const m of minterms) {
+  for (const m of normalizedMinterms) {
     chart[m] = [];
   }
   
@@ -108,9 +126,9 @@ export function simplifyQM(
   
   // 3. Find Essential Prime Implicants
   const essentialPIs = new Set<string>();
-  let uncoveredMinterms = new Set(minterms);
+  let uncoveredMinterms = new Set(normalizedMinterms);
   
-  for (const m of minterms) {
+  for (const m of normalizedMinterms) {
     if (chart[m].length === 1) {
       const epi = chart[m][0];
       essentialPIs.add(epi);
